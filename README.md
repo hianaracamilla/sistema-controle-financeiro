@@ -36,7 +36,7 @@ Esta é a **versão inicial** do modelo, focada em mapear as entidades principai
 
 ## 📌 Estrutura
 
-O modelo está organizado em um único arquivo `.brmodelo`, que pode ser visualizado com a ferramenta [BR Modelo](https://github.com/brassoft/brModelo).
+O modelo está organizado em um único arquivo `.brmodelo`, que pode ser visualizado com a ferramenta [BR Modelo]([https://sourceforge.net/projects/brmodelo/]).
 
 ---
 

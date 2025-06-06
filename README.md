@@ -1,45 +1,70 @@
-# 💰 Modelo Conceitual - Sistema de Acompanhamento Financeiro Familiar
+# 💰 Sistema de Acompanhamento Financeiro Familiar
 
-Este repositório contém a **primeira versão** do modelo conceitual de um sistema financeiro doméstico, desenvolvido com o objetivo de **organizar, planejar e acompanhar** receitas, despesas, dívidas, investimentos e projeções de saldo familiar.
+Este repositório contém o projeto de um sistema de controle financeiro familiar. O objetivo é oferecer uma solução personalizada para organizar, planejar e acompanhar receitas, despesas, saldos, planejamentos e operações de câmbio — tudo de forma integrada, com suporte a múltiplas moedas.
 
 ## 🧭 Objetivo do Projeto
 
-Desenvolver um banco de dados que permita:
+Desenvolver um sistema completo que permita:
 
-- Consolidar contas e movimentações em diferentes moedas (BRL, USD, ARS, etc.)
-- Planejar movimentações recorrentes
-- Acompanhar saldos por conta e por moeda
-- Controlar dívidas e parcelas
-- Gerenciar aportes e rendimentos de investimentos
-- Realizar projeções financeiras futuras
+- Consolidar contas e movimentações em diferentes moedas (BRL, USD, ARS)
+- Planejar movimentações recorrentes (mensais, semanais e anuais)
+- Acompanhar saldos por conta após cada movimentação
+- Registrar e visualizar operações de câmbio (com taxa e dupla movimentação automática)
+- Projetar movimentações futuras com base em planejamentos
+- Visualizar e editar movimentações com status, saldo e valor convertido
+- Automatizar rotinas financeiras familiares com transparência
 
-## 🗂️ Versão Atual (BR Modelo)
 
-Esta é a **versão inicial** do modelo, focada em mapear as entidades principais envolvidas no gerenciamento financeiro da casa. A modelagem está organizada no formato Entidade/Atributos.
+## ✅ Etapas Concluídas
 
-### Entidades e Atributos
+- [x] **Modelagem conceitual, lógica e física do banco de dados**
+- [x] Criação do banco de dados em PostgreSQL
+- [x] Criação das tabelas: `pessoa`,`moeda`, `conta`, `categoria`, `tipo_movimentacao`, `movimentacao`, `planejado`, `cambio`, `saldo`
+- [x] Lógica de cálculo de valor convertido com base na moeda da conta
+- [x] Registro de movimentações a partir de planejamentos
+- [x] Inserção de câmbio com geração automática de movimentações de entrada e saída
+- [x] Interface inicial em Streamlit com abas: Movimentações, Planejamentos e Câmbio
+- [x] Visualização e edição de movimentações com saldo e conversão
+- [x] Registro de planejamentos com recorrência e geração futura
+- [x] Commit organizado com separação de arquivos e pasta de documentação
 
-- **Pessoa**: identifica indivíduos e empresas (físicas ou jurídicas)
-- **Conta**: representa contas bancárias vinculadas a uma pessoa
-- **Saldo**: registra o saldo da conta em determinada data
-- **Moeda**: define as moedas utilizadas no sistema
-- **Movimentações Planejadas**: despesas e receitas recorrentes ou futuras
-- **Movimentações Pendentes**: lançamentos aguardando confirmação
-- **Histórico de Movimentações**: movimentações já realizadas
-- **Histórico de Câmbio**: operações de conversão entre moedas
-- **Investimentos**: aportes realizados em contas específicas
-- **Dívidas**: valores parcelados a serem pagos
 
-## 🧩 Observações
+## 🗃️ Entidades e Funcionalidades
 
-- Esta versão é conceitual e serve como base para discussões e evolução do modelo.
+### 💵 Moeda
+- BRL, USD, ARS, BTC — usadas para conversão de valores e definição de contas
 
-## 📌 Estrutura
+### 🏦 Conta
+- Associada a uma pessoa
+- Vinculada a uma moeda
+- Usada para registrar movimentações e câmbios
 
-O modelo está organizado em um único arquivo `.brmodelo`, que pode ser visualizado com a ferramenta [BR Modelo]([https://sourceforge.net/projects/brmodelo/]).
+### 📊 Movimentações
+- Inserção manual ou gerada automaticamente (câmbio ou planejamento)
+- Conversão automática de valor para BRL
+- Atualização automática do saldo
+
+### 🧾 Planejamentos
+- Recorrência mensal, semanal ou anual
+- Conversão em movimentações pendentes dentro de um intervalo de tempo
+- Visualização estruturada com tipo, moeda e categoria estratégica
+
+### 💱 Câmbio
+- Registra troca entre contas e moedas
+- Calcula e exibe a taxa efetiva
+- Gera automaticamente duas movimentações com tipo e categoria específicos
 
 ---
 
-## 🚧 Em desenvolvimento
+## 🚧 Em Desenvolvimento
 
-Este projeto está em evolução. Contribuições, ideias e sugestões são bem-vindas!
+Próximas etapas planejadas:
+- [ ] Registro automático de saldo no db pós-movimentação
+- [ ] Tela de controle de saldos por conta e moeda, visualizações futuras
+- [ ] Geração de relatórios financeiros e gráficos
+- [ ] Inserção e acompanhamento de metas financeiras
+- [ ] Criação de dashboard por período
+
+---
+
+Feito com ❤️ e muitos commits por [Hianara Camilla](https://github.com/hianaracamilla)

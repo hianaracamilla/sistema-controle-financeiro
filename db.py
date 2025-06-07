@@ -1,6 +1,6 @@
 import psycopg2
 import pandas as pd
-import streamlit as st
+from decimal import Decimal, ROUND_HALF_UP
 
 def get_connection():
     return psycopg2.connect(
@@ -11,19 +11,9 @@ def get_connection():
         port="5432"
     )
 
-def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria, status):
-    """
-    Insere uma nova movimentação na tabela movimentacao.
-    Parâmetros esperados (7 no total):
-      - data: DATE
-      - descricao: TEXT
-      - valor: NUMERIC
-      - id_conta: INT (FK para conta)
-      - id_tipo: INT (FK para tipo_movimentacao)
-      - id_categoria: INT (FK para categoria)
-      - status: VARCHAR ('pendente', 'confirmado' ou 'cancelado')
-    """
 
+# ----- MOVIMENTACÕES -----
+def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria, status):
     conn = get_connection()
     cur = conn.cursor()
 
@@ -38,8 +28,8 @@ def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria
             status
         ) VALUES (%s, %s, %s, %s, %s, %s, %s)
     """
-
-    cur.execute(query, (
+    try:
+        cur.execute(query, (
         data,
         descricao,
         valor,
@@ -47,11 +37,135 @@ def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria
         id_tipo,
         id_categoria,
         status
-    ))
+        ))
+        conn.commit()
+        return True, "Movimentação inserida com sucesso."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Erro ao inserir movimentação: {e}"
+    finally:
+        cur.close()
+        conn.close()
 
-    conn.commit()
+def atualizar_movimentacao(id_mov, data, descricao, valor, id_conta, status):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE movimentacao
+               SET data      = %s,
+                   descricao = %s,
+                   valor     = %s,
+                   id_conta  = %s,
+                   status    = %s
+             WHERE id_mov = %s
+        """, (data, descricao, valor, id_conta, status, id_mov))
+        conn.commit()
+        return True, "Movimentação atualizada com sucesso."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Erro ao atualizar movimentação: {e}"
+    finally:
+        cur.close()
+        conn.close()
+
+def carregar_movimentacoes():
+    conn = get_connection()
+    query = """
+        SELECT 
+            m.id_mov,
+            m.data,
+            m.descricao,
+            m.valor,
+            mo.moeda    AS moeda,
+            c.nome_conta AS conta,
+            tm.nome     AS tipo,
+            tm.natureza,
+            cat.nome    AS categoria,
+            m.status
+        FROM movimentacao m
+        JOIN conta c             ON c.id_conta = m.id_conta
+        JOIN moeda mo            ON mo.id_moeda = c.id_moeda
+        JOIN tipo_movimentacao tm ON tm.id_tipo = m.id_tipo
+        JOIN categoria cat       ON cat.id_categoria = m.id_categoria
+        ORDER BY m.data, m.id_mov
+    """
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
+
+def movimentacao_existe(data, descricao, id_categoria):
+    """
+    Retorna True se já existe uma movimentação com
+    mesma data, mesma descrição e mesma categoria.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT 1
+          FROM movimentacao
+         WHERE data       = %s
+           AND descricao  = %s
+           AND id_categoria = %s
+         LIMIT 1
+    """, (data, descricao, id_categoria))
+    existe = cur.fetchone() is not None
     cur.close()
     conn.close()
+    return existe
+
+
+# ----- PLANEJAMENTOS -----
+
+def inserir_planejado(recorrencia, dia, valor, id_moeda, descricao,
+                      id_categoria, dt_inicial, dt_final, id_tipo):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO planejado (
+                recorrencia, dia, valor, id_moeda,
+                descricao, id_categoria, dt_inicial,
+                dt_final, id_tipo
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (recorrencia, dia, valor, id_moeda, descricao,
+              id_categoria, dt_inicial, dt_final, id_tipo))
+        conn.commit()
+        return True, "Planejado inserido com sucesso."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Erro ao inserir planejado: {e}"
+    finally:
+        cur.close()
+        conn.close()
+
+def atualizar_planejado(id_planejado, recorrencia, dia, valor, id_moeda,
+                        descricao, id_categoria, dt_inicial, dt_final, id_tipo):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE planejado
+               SET recorrencia   = %s,
+                   dia           = %s,
+                   valor         = %s,
+                   id_moeda      = %s,
+                   descricao     = %s,
+                   id_categoria  = %s,
+                   dt_inicial    = %s,
+                   dt_final      = %s,
+                   id_tipo       = %s
+             WHERE id_planejado = %s
+        """, (recorrencia, dia, valor, id_moeda, descricao,
+              id_categoria, dt_inicial, dt_final, id_tipo, id_planejado))
+        conn.commit()
+        return True, "Planejado atualizado com sucesso."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Erro ao atualizar planejado: {e}"
+    finally:
+        cur.close()
+        conn.close()
 
 def buscar_planejados_periodo():
     conn = get_connection()
@@ -87,50 +201,7 @@ def buscar_planejados_periodo():
 
     return [dict(zip(colunas, linha)) for linha in dados]
 
-
-def buscar_opcoes_moeda():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id_moeda, moeda FROM moeda")
-    dados = cur.fetchall()
-    cur.close()
-    conn.close()
-    return {nome: id for id, nome in dados}
-
-def buscar_opcoes_conta():
-    conn = get_connection()
-    cur = conn.cursor()
-    # Buscamos também a sigla da moeda (“BRL”, “USD” ou “ARS”) através do JOIN com tabela moeda
-    cur.execute("""
-        SELECT c.id_conta, c.nome_conta, mo.moeda 
-        FROM conta c
-        JOIN moeda mo ON mo.id_moeda = c.id_moeda
-    """)
-    dados = cur.fetchall()  
-    # dados será algo como [(1, 'Nubank', 'BRL'), (2, 'Bradesco', 'USD'), …]
-    cur.close()
-    conn.close()
-    # Construímos um dicionário: { 'Nubank': (1, 'BRL'), 'Bradesco': (2, 'USD'), … }
-    return {nome: (id_conta, moeda_sigla) for id_conta, nome, moeda_sigla in dados}
-
-
-def buscar_opcoes_tipo():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id_tipo, nome FROM tipo_movimentacao")
-    dados = cur.fetchall()
-    cur.close()
-    conn.close()
-    return {nome: id for id, nome in dados}
-
-def buscar_opcoes_categoria():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id_categoria, nome FROM categoria")
-    dados = cur.fetchall()
-    cur.close()
-    conn.close()
-    return {nome: id for id, nome in dados}
+# ----- CÂMBIOS -----
 
 def inserir_cambio(data, id_conta_origem, id_conta_destino, valor_vendido, valor_comprado):
     conn = get_connection()
@@ -182,14 +253,13 @@ def inserir_cambio(data, id_conta_origem, id_conta_destino, valor_vendido, valor
         ))
 
         conn.commit()
-        st.success("✅ Câmbio registrado com movimentações.")
+        return True, f"Câmbio #{id_cambio} registrado com sucesso."
     except Exception as e:
         conn.rollback()
-        st.error(f"Erro ao registrar câmbio: {e}")
+        return False, f"Erro ao registrar câmbio: {e}"
     finally:
         cur.close()
         conn.close()
-
 
 def carregar_cambios():
     conn = get_connection()
@@ -211,3 +281,118 @@ def carregar_cambios():
         ORDER BY c.data DESC
     """
     return pd.read_sql(query, conn)
+
+# ----- RECEBIDO PJ -----
+
+def inserir_recebido_pj(data, valor_total, id_conta_padrao, id_tipo):
+    # garante que é Decimal
+    valor = Decimal(valor_total)
+
+    # define quantizador para 2 casas
+    quant = Decimal('0.01')
+
+    parte_empresa = (valor * Decimal('0.15')).quantize(quant, rounding=ROUND_HALF_UP)
+    parte_pessoa  = (valor * Decimal('0.765')).quantize(quant, rounding=ROUND_HALF_UP)
+    parte_reserva = (valor * Decimal('0.085')).quantize(quant, rounding=ROUND_HALF_UP)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        # 1) Caixa da empresa
+        cur.execute("""
+            INSERT INTO movimentacao (
+                data, descricao, valor, id_conta,
+                id_tipo, id_categoria, status
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            data,
+            f"Caixa da empresa: retido 15% de R${valor:.2f}",
+            parte_empresa,
+            id_conta_padrao,
+            id_tipo,
+            25,
+            "pendente"
+        ))
+
+        # 2) Recebimento de salário em conta
+        cur.execute("""
+            INSERT INTO movimentacao (data,descricao,valor,id_conta,id_tipo,id_categoria,status)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            data,
+            f"Recebimento de salário: R${parte_pessoa:.2f} de R${valor:.2f}",
+            parte_pessoa,
+            id_conta_padrao,
+            id_tipo,
+            24,
+            "pendente"
+        ))
+
+        # 3) Reserva de emergência
+        cur.execute("""
+            INSERT INTO movimentacao (data,descricao,valor,id_conta,id_tipo,id_categoria,status)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            data,
+            f"Reserva de emergência: 8.5% de R${valor:.2f} = R${parte_reserva:.2f}",
+            parte_reserva,
+            id_conta_padrao,
+            11,  # id_tipo = 11 (reserva de emergência)
+            23,
+            "pendente"
+        ))
+
+        conn.commit()
+        return True, "Recebimento PJ processado e 3 movimentações criadas."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Erro ao processar Recebido PJ: {e}"
+    finally:
+        cur.close()
+        conn.close()
+
+# ---- LOOKUPS ----
+
+def buscar_opcoes_moeda():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id_moeda, moeda FROM moeda")
+    dados = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {nome: id for id, nome in dados}
+
+def buscar_opcoes_conta():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT c.id_conta, c.nome_conta, mo.moeda 
+        FROM conta c
+        JOIN moeda mo ON mo.id_moeda = c.id_moeda
+    """)
+    dados = cur.fetchall()  
+    cur.close()
+    conn.close()
+    return {nome: (id_conta, moeda_sigla) for id_conta, nome, moeda_sigla in dados}
+
+def buscar_opcoes_tipo():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id_tipo, nome FROM tipo_movimentacao")
+    dados = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {nome: id for id, nome in dados}
+
+def buscar_opcoes_categoria():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id_categoria, nome FROM categoria")
+    dados = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {nome: id for id, nome in dados}
+
+
+
+

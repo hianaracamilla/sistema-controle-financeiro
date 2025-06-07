@@ -2,7 +2,23 @@ import datetime
 import pandas as pd
 import streamlit as st
 
-from db import get_connection, inserir_movimentacao, buscar_opcoes_moeda, buscar_opcoes_conta, buscar_opcoes_tipo, buscar_opcoes_categoria, buscar_planejados_periodo, carregar_cambios, inserir_cambio
+from db import (
+    get_connection,
+    inserir_movimentacao,
+    atualizar_movimentacao,
+    carregar_movimentacoes,
+    movimentacao_existe,
+    inserir_planejado,
+    atualizar_planejado,
+    buscar_planejados_periodo,
+    inserir_cambio,
+    carregar_cambios,
+    inserir_recebido_pj,
+    buscar_opcoes_moeda,
+    buscar_opcoes_conta,
+    buscar_opcoes_tipo,
+    buscar_opcoes_categoria
+)
 
 # Conta padrão (fictícia) para gerar movimentações de planejados
 DEFAULT_CONTA_POR_MOEDA = {
@@ -21,10 +37,10 @@ except Exception as e:
 
 
 # Buscar as listas reais de opções no banco
-moedas = buscar_opcoes_moeda()         # permanece igual: { 'BRL': 1, 'USD': 2, ... }
-contas_info = buscar_opcoes_conta()     # agora retorna: { 'Nubank': (1, 'BRL'), 'Bradesco': (2, 'USD'), ... }
-tipos = buscar_opcoes_tipo()           # { 'Despesa': 1, 'Receita': 2, ... }
-categorias = buscar_opcoes_categoria()  # { 'Aluguel': 1, 'Mercado': 2, ... }
+moedas = buscar_opcoes_moeda()        
+contas_info = buscar_opcoes_conta()     
+tipos = buscar_opcoes_tipo()         
+categorias = buscar_opcoes_categoria()  
 
 
 
@@ -73,99 +89,75 @@ if opcao == "📥 Movimentações":
             conta = col5.selectbox("Conta", list(contas_info.keys()))
             tipo = st.selectbox("Tipo de movimentação", list(tipos.keys()))
             categoria = st.selectbox("Categoria", list(categorias.keys()))
-
-
             status = st.selectbox("Status", ["pendente", "confirmado", "cancelado"])
-            submitted = st.form_submit_button("Salvar movimentação")
 
-           # Dentro do seu if submitted: (formulário de nova movimentação)
+
+            submitted = st.form_submit_button("Salvar movimentação")
             if submitted:
-                # Calcular o valor convertido EM MEMÓRIA (para usar na tela, mas NÃO armazenar na tabela)
                 valor_convertido = valor
-                # Extraímos a tupla (id_conta, sigla_moeda) usando o nome da conta selecionada
                 id_conta, sigla_moeda = contas_info[conta]
 
-                # Calculamos valor_convertido segundo a sigla da moeda da conta
                 if sigla_moeda == "ARS":
                     valor_convertido = valor / 180
                 elif sigla_moeda == "USD":
                     valor_convertido = valor * 5
-                else:  # BRL ou outra
+                else: 
                     valor_convertido = valor
 
 
-                # Agora chamamos inserir_movimentacao com os 7 parâmetros EXATOS
-                inserir_movimentacao(
-                    data,                            # DATE
-                    descricao,                       # TEXT
-                    valor,                           # NUMERIC
-                    id_conta,                   # ID da conta (FK)
-                    tipos[tipo],                     # ID do tipo_movimentacao (FK)
-                    categorias[categoria],           # ID da categoria (FK)
-                    status                           # 'pendente' / 'confirmado' / 'cancelado'
-                )
-                st.success("✅ Movimentação registrada com sucesso!")
+                cat_id = categorias[categoria]
+                if cat_id == 18:
+                    sucesso, msg = inserir_recebido_pj(
+                        data, descricao, valor,
+                        id_conta, tipos[tipo]
+                    )
+                else:
+                    sucesso, msg = inserir_movimentacao(
+                        data, descricao, valor,
+                        id_conta, tipos[tipo], cat_id, status
+                    )
+                if sucesso:
+                    st.success(msg)
+                else:
+                    st.error(msg)
 
 
 
-    # --- TABELA EXEMPLO DE MOVIMENTAÇÕES ---
+    # --- TABELA MOVIMENTAÇÕES ---
     st.subheader("📋 Movimentações")
+    df = carregar_movimentacoes()
 
-    def carregar_movimentacoes():
-        conn = get_connection()
-        query = """
-            SELECT 
-                m.id_mov,
-                m.data,
-                m.descricao,
-                m.valor,
-                mo.moeda AS moeda,
-                c.nome_conta AS conta,
-                tm.nome AS tipo,
-                tm.natureza,
-                cat.nome AS categoria,
-                m.status
-            FROM movimentacao m
-            JOIN conta c ON c.id_conta = m.id_conta
-            JOIN moeda mo ON mo.id_moeda = c.id_moeda
-            JOIN tipo_movimentacao tm ON tm.id_tipo = m.id_tipo
-            JOIN categoria cat ON cat.id_categoria = m.id_categoria
-            ORDER BY m.data, m.id_mov
-        """
-        df = pd.read_sql(query, conn)
+    # Conversão de moeda para reais
+    def converter_valor(row):
+        if row['moeda'] == 'ARS':
+            return row['valor'] / 180
+        elif row['moeda'] == 'USD':
+            return row['valor'] * 5
+        else:
+            return row['valor']
 
-        # Conversão de moeda para reais
-        def converter_valor(row):
-            if row['moeda'] == 'ARS':
-                return row['valor'] / 180
-            elif row['moeda'] == 'USD':
-                return row['valor'] * 5
-            else:
-                return row['valor']
+    df['valor_convertido'] = df.apply(converter_valor, axis=1)
 
-        df['valor_convertido'] = df.apply(converter_valor, axis=1)
-
-        # Ajuste de sinal com base na natureza (entrada ou saída)
-        df['valor_ajustado'] = df.apply(
-            lambda row: row['valor_convertido'] if row['natureza'] == 'entrada' else -row['valor_convertido'],
-            axis=1
-        )
+    # Ajuste de sinal com base na natureza (entrada ou saída)
+    df['valor_ajustado'] = df.apply(
+        lambda row: row['valor_convertido'] if row['natureza'] == 'entrada' else -row['valor_convertido'],
+        axis=1
+    )
 
         # Cálculo do saldo após movimentação por conta
-        df['saldo_pos_movimentacao'] = 0.0
-        contas = df['conta'].unique()
-        for conta in contas:
-            filtro = df['conta'] == conta
-            df.loc[filtro, 'saldo_pos_movimentacao'] = df.loc[filtro, 'valor_ajustado'].cumsum()
+    df['saldo_pos_movimentacao'] = 0.0
+    contas = df['conta'].unique()
+    for conta in contas:
+        filtro = df['conta'] == conta
+        df.loc[filtro, 'saldo_pos_movimentacao'] = df.loc[filtro, 'valor_ajustado'].cumsum()
 
-        # Ajusta formato final do DataFrame para exibição
-        df = df[[
-            'id_mov', 'data', 'descricao', 'valor', 'moeda', 'conta',
-            'valor_convertido', 'tipo', 'categoria', 'saldo_pos_movimentacao', 'status'
-        ]]
-        return df
+    # Ajusta formato final do DataFrame para exibição
+    df = df[[
+        'id_mov', 'data', 'descricao', 'valor', 'moeda', 'conta',
+        'valor_convertido', 'tipo', 'categoria', 'saldo_pos_movimentacao', 'status'
+    ]]
 
-    df = carregar_movimentacoes()
+
     status_options = ["pendente", "confirmado", "cancelado"]
 
     edited_df = st.data_editor(
@@ -190,39 +182,38 @@ if opcao == "📥 Movimentações":
         num_rows="dynamic"
     )
 
-    # Botão para gravar alterações no banco (você implementa o UPDATE conforme precisar)
     if st.button("💾 Salvar alterações"):
-        conn = get_connection()
-        cur = conn.cursor()
-        # Para cada linha do edited_df, faremos UPDATE:
-        for row in edited_df.itertuples():
-            # row.id_mov, row.data, row.descricao, row.valor, row.conta, row.status
-            id_mov_atual = row.id_mov
+        # Convertemos ambos em listas de dicts, na mesma ordem de linhas
+        orig_records  = df.to_dict("records")
+        edited_records = edited_df.to_dict("records")
 
-            nova_data      = row.data
-            nova_desc      = row.descricao
-            novo_valor     = row.valor
-            novo_status    = row.status
-            # Para atualizar id_conta, extraímos o ID a partir do nome da conta:
-            id_conta_novo  = contas_info[row.conta][0]
+        # Para cada par (original, editado)...
+        for orig, new in zip(orig_records, edited_records):
+            # verifica se mudou algum dos campos editáveis
+            campos_editaveis = ["data", "descricao", "valor", "conta", "status"]
+            if any(orig[c] != new[c] for c in campos_editaveis):
+                # extrai valores novos
+                id_mov      = orig["id_mov"]
+                nova_data   = new["data"]
+                nova_desc   = new["descricao"]
+                novo_valor  = new["valor"]
+                novo_status = new["status"]
+                # traduz nome da conta para id
+                id_conta_novo = contas_info[new["conta"]][0]
 
-            # Montar e executar o UPDATE:
-            cur.execute(
-                """
-                UPDATE movimentacao
-                SET data = %s,
-                    descricao = %s,
-                    valor = %s,
-                    id_conta = %s,
-                    status = %s
-                WHERE id_mov = %s
-                """,
-                (nova_data, nova_desc, novo_valor, id_conta_novo, novo_status, id_mov_atual)
-            )
-        conn.commit()
-        cur.close()
-        conn.close()
-        st.success("✅ Movimentações atualizadas no banco.")
+                # chama a função de atualização
+                sucesso, msg = atualizar_movimentacao(
+                    id_mov,
+                    nova_data,
+                    nova_desc,
+                    novo_valor,
+                    id_conta_novo,
+                    novo_status
+                )
+                if not sucesso:
+                    st.error(f"Erro ao atualizar #{id_mov}: {msg}")
+
+        st.success("✅ Movimentações atualizadas com sucesso.")
 
 
 elif opcao == "💱 Câmbio":
@@ -254,20 +245,18 @@ elif opcao == "💱 Câmbio":
                 id_conta_origem = contas_info[conta_venda][0]
                 id_conta_destino = contas_info[conta_compra][0]
 
-                inserir_cambio(
-                    data_cambio,
-                    id_conta_origem,
-                    id_conta_destino,
-                    valor_vendido,
-                    valor_comprado
+                sucesso, msg = inserir_cambio(
+                    data_cambio, id_conta_origem, id_conta_destino,
+                    valor_vendido, valor_comprado
                 )
-
-                st.success("✅ Câmbio registrado com sucesso.")
+                if sucesso: st.success(msg)
+                else:        st.error(msg)
 
 
 
     # Tabela de câmbios (dados simulados)
     df_cambio = carregar_cambios()
+    st.subheader("📋 Histórico de Câmbios")
     st.dataframe(df_cambio, use_container_width=True)
 
 
@@ -307,43 +296,19 @@ elif opcao == "🗓️ Planejamentos":
 
             submitted_plan = st.form_submit_button("Salvar planejada")
             if submitted_plan:
-                conn = get_connection()
-                cur = conn.cursor()
-                sql_insere_planejado = """
-                    INSERT INTO planejado (
-                        recorrencia,
-                        dia,
-                        valor,
-                        id_moeda,
-                        descricao,
-                        id_categoria,
-                        dt_inicial,
-                        dt_final,
-                        id_tipo
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """
-
-                # Extrair id_moeda da seleção
-                id_moeda = moedas[moeda]
-                tipos = buscar_opcoes_tipo()
-                id_tipo = tipos[tipo_mov]
-
-                cur.execute(sql_insere_planejado, (
+                sucesso, msg = inserir_planejado(
                     recorrencia,
                     dia,
                     valor,
-                    id_moeda,
+                    moedas[moeda],
                     descricao,
                     categorias[categoria],
                     data_inicial,
-                    data_final if data_final else None,
-                    id_tipo
-                ))
-                conn.commit()
-                cur.close()
-                conn.close()
-
-                st.success("📅 Planejamento salvo com sucesso!")
+                    data_final,
+                    tipos[tipo_mov]
+                )
+                if sucesso: st.success(msg)
+                else:       st.error(msg)
 
     st.markdown("---")
     st.subheader("📌 Gerar Movimentações a partir de Planejamentos")
@@ -369,6 +334,7 @@ elif opcao == "🗓️ Planejamentos":
             dt_final = p["dt_final"]
             id_tipo = p["id_tipo"]
 
+            datas = []
             if rec == "mensal":
                 d = data_inicio.replace(day=1)
                 while d <= data_fim:
@@ -385,17 +351,29 @@ elif opcao == "🗓️ Planejamentos":
                         id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA.get(id_moeda)
                         if id_conta_para_inserir is None:
                            id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA[2]
+                        if not movimentacao_existe(data_mov, descricao, id_categoria):   
+                            if id_categoria == 18:
+                                inserir_recebido_pj(
+                                    data_mov,
+                                    valor,
+                                    id_conta_para_inserir,
+                                    id_tipo,
+                                )
+                            else:
+                                inserir_movimentacao(
+                                    data_mov,                            # DATE
+                                    descricao,                       # TEXT
+                                    valor,                           # NUMERIC
+                                    id_conta_para_inserir,                   # ID da conta (FK)
+                                    id_tipo,                     # ID do tipo_movimentacao (FK)
+                                    id_categoria,           # ID da categoria (FK)
+                                    "pendente"                           # 'pendente' / 'confirmado' / 'cancelado'
+                                )
+                            total_inseridas += 1
+                        else:
+                        # opcional: registrar log ou exibir info
+                            st.info(f"Movimentação já existente em {data_mov}: «{descricao}»")
 
-                        inserir_movimentacao(
-                            data_mov,
-                            descricao,
-                            valor,
-                            id_conta_para_inserir,
-                            id_tipo,
-                            id_categoria,
-                            "pendente"
-                        )
-                        total_inseridas += 1
                     if d.month == 12:
                         d = d.replace(year=d.year + 1, month=1)
                     else:
@@ -412,17 +390,28 @@ elif opcao == "🗓️ Planejamentos":
                         id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA.get(id_moeda)
                         if id_conta_para_inserir is None:
                            id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA[2]
-
-                        inserir_movimentacao(
-                            dia_corrente,
-                            descricao,
-                            valor,
-                            id_conta_para_inserir,
-                            id_tipo,
-                            id_categoria,
-                            "pendente"
-                        )
-                        total_inseridas += 1
+                        if not movimentacao_existe(data_mov, descricao, id_categoria):
+                            if id_categoria == 18:
+                                inserir_recebido_pj(
+                                    dia_corrente,
+                                    valor,
+                                    id_conta_para_inserir,
+                                    id_tipo,
+                                )
+                            else:
+                                inserir_movimentacao(
+                                    dia_corrente,                            # DATE
+                                    descricao,                       # TEXT
+                                    valor,                           # NUMERIC
+                                    id_conta_para_inserir,                   # ID da conta (FK)
+                                    id_tipo,                     # ID do tipo_movimentacao (FK)
+                                    id_categoria,           # ID da categoria (FK)
+                                    "pendente"                           # 'pendente' / 'confirmado' / 'cancelado'
+                                )
+                            total_inseridas += 1
+                        else:
+                        # opcional: registrar log ou exibir info
+                            st.info(f"Movimentação já existente em {data_mov}: «{descricao}»")
 
             elif rec == "anual":
                 ano = data_inicio.year
@@ -440,25 +429,76 @@ elif opcao == "🗓️ Planejamentos":
                         id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA.get(id_moeda)
                         if id_conta_para_inserir is None:
                            id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA[2]
-
-                        inserir_movimentacao(
-                            data_mov,
-                            descricao,
-                            valor,
-                            id_conta_para_inserir,
-                            id_tipo,
-                            id_categoria,
-                            "pendente"
-                        )
-                        total_inseridas += 1
+                        if not movimentacao_existe(data_mov, descricao, id_categoria):
+                            if id_categoria == 18:
+                                inserir_recebido_pj(
+                                    data_mov,
+                                    valor,
+                                    id_conta_para_inserir,
+                                    id_tipo,
+                                )
+                            else:
+                                inserir_movimentacao(
+                                    data_mov,                            # DATE
+                                    descricao,                       # TEXT
+                                    valor,                           # NUMERIC
+                                    id_conta_para_inserir,                   # ID da conta (FK)
+                                    id_tipo,                     # ID do tipo_movimentacao (FK)
+                                    id_categoria,           # ID da categoria (FK)
+                                    "pendente"                           # 'pendente' / 'confirmado' / 'cancelado'
+                                )
+                            total_inseridas += 1
+                        else:
+                        # opcional: registrar log ou exibir info
+                            st.info(f"Movimentação já existente em {data_mov}: «{descricao}»")
                     ano += 1
 
         st.success(f"✅ Foram inseridas {total_inseridas} movimentações pendentes.")
 
     st.subheader("📋 Planejamentos Cadastrados")
     lista_planejados = buscar_planejados_periodo()
+
     if lista_planejados:
-        df_planejados = pd.DataFrame(lista_planejados)
-        st.dataframe(df_planejados, use_container_width=True)
+        df_plan = pd.DataFrame(lista_planejados)
+        edited_plan = st.data_editor(
+            df_plan,
+            use_container_width=True,
+            column_config={
+                "id_planejado": st.column_config.NumberColumn("ID", disabled=True),
+                "recorrencia":  st.column_config.SelectboxColumn("Recorrência", options=["Mensal","Semanal","Anual"]),
+                "dia":          st.column_config.NumberColumn("Dia", min_value=1, max_value=31),
+                "valor":        st.column_config.NumberColumn("Valor", format="R$ %.2f"),
+                "moeda":        st.column_config.TextColumn("Moeda", disabled=True),
+                "descricao":    st.column_config.TextColumn("Descrição"),
+                "categoria":    st.column_config.TextColumn("Categoria", disabled=True),
+                "categoria_estrategica": st.column_config.TextColumn("Estratégia", disabled=True),
+                "tipo":         st.column_config.TextColumn("Tipo", disabled=True),
+                "dt_inicial":   st.column_config.DateColumn("Início"),
+                "dt_final":     st.column_config.DateColumn("Fim")
+            },
+            num_rows="dynamic"
+        )
+        if st.button("💾 Salvar alterações de planejados"):
+            # compara original e editado
+            df_orig = pd.DataFrame(lista_planejados)
+            for orig, new in zip(df_orig.to_dict('records'), edited_plan.to_dict('records')):
+                # se mudou algum campo editável
+                if any(orig[k] != new[k] for k in ["recorrencia","dia","valor","dt_inicial","dt_final","descricao"]):
+                    sucesso, msg = atualizar_planejado(
+                        new["id_planejado"],
+                        new["recorrencia"],
+                        new["dia"],
+                        new["valor"],
+                        orig["id_moeda"],      # moeda não editável na grid
+                        new["descricao"],
+                        orig["id_categoria"],  # idem categoria
+                        new["dt_inicial"],
+                        new["dt_final"],
+                        orig["id_tipo"]
+                    )
+                    if not sucesso:
+                        st.error(msg)
+            st.success("Planejados atualizados.")
     else:
-        st.write("Nenhum planejamento cadastrado no momento.")
+        st.write("Nenhum planejamento cadastrado.")
+

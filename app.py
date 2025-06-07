@@ -151,10 +151,10 @@ if opcao == "📥 Movimentações":
         filtro = df['conta'] == conta
         df.loc[filtro, 'saldo_pos_movimentacao'] = df.loc[filtro, 'valor_ajustado'].cumsum()
 
-    # Ajusta formato final do DataFrame para exibição
+        # Ajusta formato final do DataFrame para exibição
     df = df[[
         'id_mov', 'data', 'descricao', 'valor', 'moeda', 'conta',
-        'valor_convertido', 'tipo', 'categoria', 'saldo_pos_movimentacao', 'status'
+        'valor_convertido', 'id_tipo','tipo', 'categoria', 'saldo_pos_movimentacao', 'status'
     ]]
 
 
@@ -187,33 +187,41 @@ if opcao == "📥 Movimentações":
         orig_records  = df.to_dict("records")
         edited_records = edited_df.to_dict("records")
 
+        atualizacoes = 0
+
         # Para cada par (original, editado)...
         for orig, new in zip(orig_records, edited_records):
             # verifica se mudou algum dos campos editáveis
             campos_editaveis = ["data", "descricao", "valor", "conta", "status"]
             if any(orig[c] != new[c] for c in campos_editaveis):
-                # extrai valores novos
-                id_mov      = orig["id_mov"]
-                nova_data   = new["data"]
-                nova_desc   = new["descricao"]
-                novo_valor  = new["valor"]
-                novo_status = new["status"]
-                # traduz nome da conta para id
-                id_conta_novo = contas_info[new["conta"]][0]
+                id_mov       = orig["id_mov"]
+                nova_data    = new["data"]
+                nova_desc    = new["descricao"]
+                novo_valor   = new["valor"]
+                novo_status  = new["status"]
+                id_conta_novo = contas_info[new["conta"]][0]  # traduz nome da conta para id
 
-                # chama a função de atualização
+                # Recupera tipo e categoria do original (não foram editáveis)
+                id_tipo       = orig["id_tipo"]
+
+                # Chama a função de atualização completa
                 sucesso, msg = atualizar_movimentacao(
                     id_mov,
                     nova_data,
                     nova_desc,
                     novo_valor,
                     id_conta_novo,
+                    id_tipo,
                     novo_status
                 )
-                if not sucesso:
+
+                if sucesso:
+                    atualizacoes += 1
+                else:
                     st.error(f"Erro ao atualizar #{id_mov}: {msg}")
 
-        st.success("✅ Movimentações atualizadas com sucesso.")
+        st.success(f"✅ {atualizacoes} movimentações atualizadas com sucesso.")
+        st.rerun()
 
 
 elif opcao == "💱 Câmbio":

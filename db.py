@@ -27,6 +27,7 @@ def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria
             id_categoria,
             status
         ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id_mov
     """
     try:
         cur.execute(query, (
@@ -38,6 +39,10 @@ def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria
         id_categoria,
         status
         ))
+        id_mov = cur.fetchone()[0]
+        cur.execute("SELECT natureza FROM tipo_movimentacao WHERE id_tipo = %s", (id_tipo,))
+        natureza = cur.fetchone()[0]
+        atualizar_saldo_apos_movimentacao(id_conta, id_mov, valor, natureza)
         conn.commit()
         return True, "Movimentação inserida com sucesso."
     except Exception as e:
@@ -46,28 +51,60 @@ def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria
     finally:
         cur.close()
         conn.close()
-
-def atualizar_movimentacao(id_mov, data, descricao, valor, id_conta, status):
+        
+def atualizar_movimentacao(id_mov, data, descricao, valor, id_conta, id_tipo, status):
     conn = get_connection()
     cur = conn.cursor()
+
+    query = """
+        UPDATE movimentacao
+        SET data = %s,
+            descricao = %s,
+            valor = %s,
+            id_conta = %s,
+            id_tipo = %s,
+            status = %s
+        WHERE id_mov = %s
+    """
+
     try:
-        cur.execute("""
-            UPDATE movimentacao
-               SET data      = %s,
-                   descricao = %s,
-                   valor     = %s,
-                   id_conta  = %s,
-                   status    = %s
-             WHERE id_mov = %s
-        """, (data, descricao, valor, id_conta, status, id_mov))
+        # Busca status anterior
+        cur.execute("SELECT status FROM movimentacao WHERE id_mov = %s", (id_mov,))
+        status_anterior = cur.fetchone()[0]
+
+        # Executa o UPDATE
+        cur.execute(query, (
+            data,
+            descricao,
+            valor,
+            id_conta,
+            id_tipo,
+            status,
+            id_mov
+        ))
+
+        # Atualiza o saldo apenas se o novo status for "confirmado"
+        if status == "confirmado":
+            # Remove saldo anterior (se existia)
+            if status_anterior == "confirmado":
+                cur.execute("DELETE FROM saldo WHERE id_movimentacao = %s", (id_mov,))
+
+            # Pega a natureza e atualiza o saldo
+            cur.execute("SELECT natureza FROM tipo_movimentacao WHERE id_tipo = %s", (id_tipo,))
+            natureza = cur.fetchone()[0]
+            atualizar_saldo_apos_movimentacao(id_conta, id_mov, valor, natureza)
+
         conn.commit()
         return True, "Movimentação atualizada com sucesso."
+    
     except Exception as e:
         conn.rollback()
         return False, f"Erro ao atualizar movimentação: {e}"
+    
     finally:
         cur.close()
         conn.close()
+
 
 def carregar_movimentacoes():
     conn = get_connection()
@@ -79,6 +116,7 @@ def carregar_movimentacoes():
             m.valor,
             mo.moeda    AS moeda,
             c.nome_conta AS conta,
+            m.id_tipo,
             tm.nome     AS tipo,
             tm.natureza,
             cat.nome    AS categoria,
@@ -394,5 +432,41 @@ def buscar_opcoes_categoria():
     return {nome: id for id, nome in dados}
 
 
+# ------ SALDOS ------
+
+def get_ultimo_saldo(id_conta):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT saldo 
+        FROM saldo 
+        WHERE id_conta = %s 
+        ORDER BY data DESC, id_saldo DESC 
+        LIMIT 1
+    """, (id_conta,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row[0] if row else Decimal("0.00")
+
+
+def atualizar_saldo_apos_movimentacao(id_conta, id_mov, valor, natureza):
+    saldo_anterior = get_ultimo_saldo(id_conta)
+
+    if natureza == "entrada":
+        saldo_novo = saldo_anterior + Decimal(valor)
+    else:
+        saldo_novo = saldo_anterior - Decimal(valor)
+
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO saldo (data, saldo, id_conta, id_mov)
+        VALUES (CURRENT_DATE, %s, %s, %s)
+    """, (saldo_novo, id_conta, id_mov))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 

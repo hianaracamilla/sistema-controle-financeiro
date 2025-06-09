@@ -19,7 +19,7 @@ def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria
 
     query = """
         INSERT INTO movimentacao (
-            data,
+            data_mov,
             descricao,
             valor,
             id_conta,
@@ -30,27 +30,36 @@ def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria
         RETURNING id_mov
     """
     try:
+        # Executa o INSERT e já pega o id_mov inserido
         cur.execute(query, (
-        data,
-        descricao,
-        valor,
-        id_conta,
-        id_tipo,
-        id_categoria,
-        status
+            data,
+            descricao,
+            valor,
+            id_conta,
+            id_tipo,
+            id_categoria,
+            status
         ))
         id_mov = cur.fetchone()[0]
-        cur.execute("SELECT natureza FROM tipo_movimentacao WHERE id_tipo = %s", (id_tipo,))
-        natureza = cur.fetchone()[0]
-        atualizar_saldo_apos_movimentacao(id_conta, id_mov, valor, natureza)
+
         conn.commit()
+
+        # Se status for 'confirmado', atualiza o saldo
+        if status == "confirmado":
+            cur.execute("SELECT natureza FROM tipo_movimentacao WHERE id_tipo = %s", (id_tipo,))
+            natureza = cur.fetchone()[0]
+            atualizar_saldo_apos_movimentacao(id_conta, id_mov, valor, natureza)
+
         return True, "Movimentação inserida com sucesso."
+
     except Exception as e:
         conn.rollback()
         return False, f"Erro ao inserir movimentação: {e}"
+
     finally:
         cur.close()
         conn.close()
+
         
 def atualizar_movimentacao(id_mov, data, descricao, valor, id_conta, id_tipo, status):
     conn = get_connection()
@@ -58,7 +67,7 @@ def atualizar_movimentacao(id_mov, data, descricao, valor, id_conta, id_tipo, st
 
     query = """
         UPDATE movimentacao
-        SET data = %s,
+        SET data_mov = %s,
             descricao = %s,
             valor = %s,
             id_conta = %s,
@@ -87,7 +96,7 @@ def atualizar_movimentacao(id_mov, data, descricao, valor, id_conta, id_tipo, st
         if status == "confirmado":
             # Remove saldo anterior (se existia)
             if status_anterior == "confirmado":
-                cur.execute("DELETE FROM saldo WHERE id_movimentacao = %s", (id_mov,))
+                cur.execute("DELETE FROM saldo WHERE id_mov = %s", (id_mov,))
 
             # Pega a natureza e atualiza o saldo
             cur.execute("SELECT natureza FROM tipo_movimentacao WHERE id_tipo = %s", (id_tipo,))
@@ -111,7 +120,7 @@ def carregar_movimentacoes():
     query = """
         SELECT 
             m.id_mov,
-            m.data,
+            m.data_mov AS data,
             m.descricao,
             m.valor,
             mo.moeda    AS moeda,
@@ -120,13 +129,13 @@ def carregar_movimentacoes():
             tm.nome     AS tipo,
             tm.natureza,
             cat.nome    AS categoria,
-            m.status
+            m.status AS status
         FROM movimentacao m
         JOIN conta c             ON c.id_conta = m.id_conta
         JOIN moeda mo            ON mo.id_moeda = c.id_moeda
         JOIN tipo_movimentacao tm ON tm.id_tipo = m.id_tipo
         JOIN categoria cat       ON cat.id_categoria = m.id_categoria
-        ORDER BY m.data, m.id_mov
+        ORDER BY m.data_mov, m.id_mov
     """
     df = pd.read_sql(query, conn)
     conn.close()
@@ -142,7 +151,7 @@ def movimentacao_existe(data, descricao, id_categoria):
     cur.execute("""
         SELECT 1
           FROM movimentacao
-         WHERE data       = %s
+         WHERE data_mov       = %s
            AND descricao  = %s
            AND id_categoria = %s
          LIMIT 1
@@ -151,6 +160,21 @@ def movimentacao_existe(data, descricao, id_categoria):
     cur.close()
     conn.close()
     return existe
+
+def deletar_movimentacao(id_mov):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM saldo WHERE id_mov = %s", (id_mov,))
+        cur.execute("DELETE FROM movimentacao WHERE id_mov = %s", (id_mov,))
+        conn.commit()
+        return True, "Movimentação deletada com sucesso."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Erro ao deletar movimentação: {e}"
+    finally:
+        cur.close()
+        conn.close()
 
 
 # ----- PLANEJAMENTOS -----
@@ -166,7 +190,7 @@ def inserir_planejado(recorrencia, dia, valor, id_moeda, descricao,
                 descricao, id_categoria, dt_inicial,
                 dt_final, id_tipo
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (recorrencia, dia, valor, id_moeda, descricao,
+        """, (recorrencia.lower(), dia, valor, id_moeda, descricao,
               id_categoria, dt_inicial, dt_final, id_tipo))
         conn.commit()
         return True, "Planejado inserido com sucesso."
@@ -249,7 +273,7 @@ def inserir_cambio(data, id_conta_origem, id_conta_destino, valor_vendido, valor
         # 1. Inserir o câmbio na tabela 'cambio'
         cur.execute("""
             INSERT INTO cambio (
-                data, conta_venda, valor_vendido,
+                data_cambio, conta_venda, valor_vendido,
                 conta_compra, valor_comprado
             ) VALUES (%s, %s, %s, %s, %s)
             RETURNING id_cambio
@@ -259,7 +283,7 @@ def inserir_cambio(data, id_conta_origem, id_conta_destino, valor_vendido, valor
         # 2. Inserir movimentação de saída (venda da moeda)
         cur.execute("""
             INSERT INTO movimentacao (
-                data, descricao, valor, id_conta,
+                data_mov, descricao, valor, id_conta,
                 id_tipo, id_categoria, status, id_cambio
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
@@ -269,14 +293,14 @@ def inserir_cambio(data, id_conta_origem, id_conta_destino, valor_vendido, valor
             id_conta_origem,
             13,            # id_tipo = 13 (saída)
             22,            # id_categoria = 22 (Câmbio)
-            "confirmado",
+            "pendente",
             id_cambio
         ))
 
         # 3. Inserir movimentação de entrada (compra da moeda)
         cur.execute("""
             INSERT INTO movimentacao (
-                data, descricao, valor, id_conta,
+                data_mov, descricao, valor, id_conta,
                 id_tipo, id_categoria, status, id_cambio
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
@@ -286,7 +310,7 @@ def inserir_cambio(data, id_conta_origem, id_conta_destino, valor_vendido, valor
             id_conta_destino,
             14,            # id_tipo = 14 (entrada)
             22,            # id_categoria = 22 (Câmbio)
-            "confirmado",
+            "pendente",
             id_cambio
         ))
 
@@ -303,7 +327,7 @@ def carregar_cambios():
     conn = get_connection()
     query = """
         SELECT
-            c.data,
+            c.data_cambio AS data,
             cv.nome_conta AS conta_venda,
             mv.moeda AS moeda_venda,
             c.valor_vendido,
@@ -316,7 +340,7 @@ def carregar_cambios():
         JOIN conta cc ON cc.id_conta = c.conta_compra
         JOIN moeda mv ON mv.id_moeda = cv.id_moeda
         JOIN moeda mc ON mc.id_moeda = cc.id_moeda
-        ORDER BY c.data DESC
+        ORDER BY c.data_cambio DESC
     """
     return pd.read_sql(query, conn)
 
@@ -336,15 +360,15 @@ def inserir_recebido_pj(data, valor_total, id_conta_padrao, id_tipo):
     conn = get_connection()
     cur = conn.cursor()
     try:
-        # 1) Caixa da empresa
+    # 1) Caixa da empresa
         cur.execute("""
             INSERT INTO movimentacao (
-                data, descricao, valor, id_conta,
+                data_mov, descricao, valor, id_conta,
                 id_tipo, id_categoria, status
             ) VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (
             data,
-            f"Caixa da empresa: retido 15% de R${valor:.2f}",
+            f"Caixa da empresa: retido 15% de R${valor:.2f} ;;pj_auto",
             parte_empresa,
             id_conta_padrao,
             id_tipo,
@@ -354,11 +378,11 @@ def inserir_recebido_pj(data, valor_total, id_conta_padrao, id_tipo):
 
         # 2) Recebimento de salário em conta
         cur.execute("""
-            INSERT INTO movimentacao (data,descricao,valor,id_conta,id_tipo,id_categoria,status)
+            INSERT INTO movimentacao (data_mov,descricao,valor,id_conta,id_tipo,id_categoria,status)
             VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (
             data,
-            f"Recebimento de salário: R${parte_pessoa:.2f} de R${valor:.2f}",
+            f"Recebimento de salário: R${parte_pessoa:.2f} de R${valor:.2f} ;;pj_auto",
             parte_pessoa,
             id_conta_padrao,
             id_tipo,
@@ -368,14 +392,14 @@ def inserir_recebido_pj(data, valor_total, id_conta_padrao, id_tipo):
 
         # 3) Reserva de emergência
         cur.execute("""
-            INSERT INTO movimentacao (data,descricao,valor,id_conta,id_tipo,id_categoria,status)
+            INSERT INTO movimentacao (data_mov,descricao,valor,id_conta,id_tipo,id_categoria,status)
             VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (
             data,
-            f"Reserva de emergência: 8.5% de R${valor:.2f} = R${parte_reserva:.2f}",
+            f"Reserva de emergência: 8.5% de R${valor:.2f} = R${parte_reserva:.2f} ;;pj_auto",
             parte_reserva,
             id_conta_padrao,
-            11,  # id_tipo = 11 (reserva de emergência)
+            15,  # id_tipo = 15 (reserva de emergência)
             23,
             "pendente"
         ))
@@ -388,6 +412,22 @@ def inserir_recebido_pj(data, valor_total, id_conta_padrao, id_tipo):
     finally:
         cur.close()
         conn.close()
+
+
+def movimentacoes_pj_ja_existem(data_mov):
+    conn = get_connection()
+    cur = conn.cursor()
+    query = """
+        SELECT COUNT(*) FROM movimentacao
+        WHERE data_mov = %s
+        AND id_categoria IN (23, 24, 25)
+        AND descricao LIKE '%%;;pj_auto'
+    """
+    cur.execute(query, (data_mov,))
+    count = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return count >= 3  # se as 3 já existem, não recriar
 
 # ---- LOOKUPS ----
 
@@ -441,7 +481,7 @@ def get_ultimo_saldo(id_conta):
         SELECT saldo 
         FROM saldo 
         WHERE id_conta = %s 
-        ORDER BY data DESC, id_saldo DESC 
+        ORDER BY data_atualizacao DESC, id_saldo DESC 
         LIMIT 1
     """, (id_conta,))
     row = cur.fetchone()
@@ -462,7 +502,7 @@ def atualizar_saldo_apos_movimentacao(id_conta, id_mov, valor, natureza):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO saldo (data, saldo, id_conta, id_mov)
+        INSERT INTO saldo (data_atualizacao, saldo, id_conta, id_mov)
         VALUES (CURRENT_DATE, %s, %s, %s)
     """, (saldo_novo, id_conta, id_mov))
     conn.commit()

@@ -1,6 +1,6 @@
 import datetime
 import pandas as pd
-import streamlit as st
+import  streamlit as st
 
 from db import (
     get_connection,
@@ -17,7 +17,9 @@ from db import (
     buscar_opcoes_moeda,
     buscar_opcoes_conta,
     buscar_opcoes_tipo,
-    buscar_opcoes_categoria
+    buscar_opcoes_categoria,
+    movimentacoes_pj_ja_existem,
+    deletar_movimentacao
 )
 
 # Conta padrão (fictícia) para gerar movimentações de planejados
@@ -62,16 +64,37 @@ if opcao == "📥 Movimentações":
 
     # --- BOTÕES SUPERIORES ---
     st.header("Importação e Filtros")
+    if "filtro_mov" not in st.session_state:
+        st.session_state.filtro_mov = None
+    filtro_personalizado = st.session_state.get("filtro_mov", None)
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.button("📥 Importar CSV")
+        if st.button("📅 Pendentes até ontem"):
+            st.session_state.filtro_mov = ("ate_ontem", datetime.date.today() - datetime.timedelta(days=1))
+            st.rerun()
     with col2:
-        st.button("📅 Pendentes até ontem")
+        if st.button("📆 Próximos 7 dias"):
+            st.session_state.filtro_mov = ("proximos_7", datetime.date.today() + datetime.timedelta(days=7))
+            st.rerun()
     with col3:
-        st.button("📆 Próximos 7 dias")
-    with col4:
-        st.button("📆 Próximos 30 dias")
+        if st.button("❌ Limpar Filtros"):
+            st.session_state.filtro_mov = None
+            st.rerun()
+
+
+    df = carregar_movimentacoes()
+
+    filtro_personalizado = st.session_state.get("filtro_mov", None)
+
+    if filtro_personalizado:
+        tipo_filtro, data_limite = filtro_personalizado
+        hoje = datetime.date.today()
+        if tipo_filtro == "ate_ontem":
+            df = df[(df["data"] <= data_limite) & (df["status"] == "pendente")]
+        elif tipo_filtro == "proximos_7":
+            df = df[(df["data"] > hoje) & (df["data"] <= data_limite) & (df["status"] == "pendente")]
+
 
     # --- FORMULÁRIO DE NOVA MOVIMENTAÇÃO ---
     if st.button("➕ Inserir nova movimentação"):
@@ -107,10 +130,13 @@ if opcao == "📥 Movimentações":
 
                 cat_id = categorias[categoria]
                 if cat_id == 18:
-                    sucesso, msg = inserir_recebido_pj(
-                        data, descricao, valor,
-                        id_conta, tipos[tipo]
-                    )
+                    if not movimentacoes_pj_ja_existem(data):
+                        sucesso, msg = inserir_recebido_pj(
+                            data, descricao, valor,
+                            id_conta, tipos[tipo]
+                        )
+                    else:
+                        sucesso, msg = False, "❗ Movimentações PJ já existentes nesta data."
                 else:
                     sucesso, msg = inserir_movimentacao(
                         data, descricao, valor,
@@ -125,7 +151,6 @@ if opcao == "📥 Movimentações":
 
     # --- TABELA MOVIMENTAÇÕES ---
     st.subheader("📋 Movimentações")
-    df = carregar_movimentacoes()
 
     # Conversão de moeda para reais
     def converter_valor(row):
@@ -138,33 +163,34 @@ if opcao == "📥 Movimentações":
 
     df['valor_convertido'] = df.apply(converter_valor, axis=1)
 
-    # Ajuste de sinal com base na natureza (entrada ou saída)
-    df['valor_ajustado'] = df.apply(
-        lambda row: row['valor_convertido'] if row['natureza'] == 'entrada' else -row['valor_convertido'],
+    # Ajuste de sinal na moeda original
+    df['valor_ajustado_moeda'] = df.apply(
+        lambda row: row['valor'] if row['natureza'] == 'entrada' else -row['valor'],
         axis=1
     )
 
-        # Cálculo do saldo após movimentação por conta
+    # Cálculo do saldo após movimentação por conta, na moeda original
     df['saldo_pos_movimentacao'] = 0.0
-    contas = df['conta'].unique()
-    for conta in contas:
+    for conta in df['conta'].unique():
         filtro = df['conta'] == conta
-        df.loc[filtro, 'saldo_pos_movimentacao'] = df.loc[filtro, 'valor_ajustado'].cumsum()
+        df.loc[filtro, 'saldo_pos_movimentacao'] = df.loc[filtro, 'valor_ajustado_moeda'].cumsum()
 
-        # Ajusta formato final do DataFrame para exibição
-    df = df[[
-        'id_mov', 'data', 'descricao', 'valor', 'moeda', 'conta',
-        'valor_convertido', 'id_tipo','tipo', 'categoria', 'saldo_pos_movimentacao', 'status'
+    # Exibe saldo com moeda ao lado
+    df['saldo_exibido'] = df['saldo_pos_movimentacao'].round(2).astype(str) + " " + df['moeda']
+
+    df["selecionar"] = False
+    df = df[[  # reorganiza as colunas
+    'selecionar', 'id_mov', 'data', 'descricao', 'valor', 'moeda', 'valor_convertido',
+        'conta', 'saldo_exibido', 'status', 'tipo', 'categoria',  'id_tipo'
     ]]
 
-
-    status_options = ["pendente", "confirmado", "cancelado"]
 
     edited_df = st.data_editor(
         df,
         use_container_width=True,
         column_config={
             # id_mov é a PK e ficará oculta (readonly):
+            "selecionar": st.column_config.CheckboxColumn("Selecionar"),
             "id_mov": st.column_config.NumberColumn(
             "ID", help="(chave primária)", disabled=True
             ),
@@ -176,11 +202,25 @@ if opcao == "📥 Movimentações":
             "valor_convertido": st.column_config.NumberColumn("Valor em reais", format="R$ %.2f"),
             "tipo": st.column_config.TextColumn("Tipo"),
             "categoria": st.column_config.TextColumn("Categoria"),
-            "saldo_pos_movimentacao": st.column_config.NumberColumn("Saldo após transação", format="%.2f"),
-            "status": st.column_config.SelectboxColumn("Status", options=status_options),
+            'id_tipo': st.column_config.NumberColumn(
+                "ID Tipo", help="(chave estrangeira)", disabled=True),
+            "saldo_exibido": st.column_config.TextColumn("Saldo após transação"),
+            "status": st.column_config.SelectboxColumn("Status", options=["pendente", "confirmado", "cancelado"]),
         },
         num_rows="dynamic"
     )
+
+    if st.button("🗑️ Deletar movimentações selecionadas"):
+        deletadas = 0
+        for linha in edited_df.to_dict("records"):
+            if linha["selecionar"]:
+                sucesso, msg = deletar_movimentacao(linha["id_mov"])
+                if sucesso:
+                    deletadas += 1
+                else:
+                    st.error(f"Erro ao deletar #{linha['id_mov']}: {msg}")
+        st.success(f"🗑️ {deletadas} movimentações deletadas com sucesso.")
+        st.rerun()
 
     if st.button("💾 Salvar alterações"):
         # Convertemos ambos em listas de dicts, na mesma ordem de linhas
@@ -282,7 +322,7 @@ elif opcao == "🗓️ Planejamentos":
         st.subheader("Nova movimentação planejada")
         with st.form("nova_planejada"):
             col1, col2, col3 = st.columns(3)
-            recorrencia = col1.selectbox("Recorrência", ["Mensal", "Semanal", "Anual"])
+            recorrencia = col1.selectbox("Recorrência", ["Mensal", "Semanal", "Semestral","Anual"])
             tipo_mov = col2.selectbox("Tipo", list(buscar_opcoes_tipo().keys()))
             dia = col3.number_input("Dia (para recorrência)", min_value=1, max_value=31)
 
@@ -298,7 +338,7 @@ elif opcao == "🗓️ Planejamentos":
             categoria = st.selectbox("Categoria", list(categorias.keys()))
 
             # Data inicial (opcional)
-            data_inicial = st.date_input("Data inicial (opcional)", value=datetime.date.today())
+            data_inicial = st.date_input("Data inicial (opcional)", value=None)
 
             data_final = st.date_input("Data final da recorrência (opcional)", value=None)
 
@@ -361,12 +401,13 @@ elif opcao == "🗓️ Planejamentos":
                            id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA[2]
                         if not movimentacao_existe(data_mov, descricao, id_categoria):   
                             if id_categoria == 18:
-                                inserir_recebido_pj(
-                                    data_mov,
-                                    valor,
-                                    id_conta_para_inserir,
-                                    id_tipo,
-                                )
+                                if not movimentacoes_pj_ja_existem(data_mov):
+                                    inserir_recebido_pj(
+                                        data_mov,
+                                        valor,
+                                        id_conta_para_inserir,
+                                        id_tipo,
+                                    )
                             else:
                                 inserir_movimentacao(
                                     data_mov,                            # DATE
@@ -398,14 +439,15 @@ elif opcao == "🗓️ Planejamentos":
                         id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA.get(id_moeda)
                         if id_conta_para_inserir is None:
                            id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA[2]
-                        if not movimentacao_existe(data_mov, descricao, id_categoria):
+                        if not movimentacao_existe(dia_corrente, descricao, id_categoria):
                             if id_categoria == 18:
-                                inserir_recebido_pj(
-                                    dia_corrente,
-                                    valor,
-                                    id_conta_para_inserir,
-                                    id_tipo,
-                                )
+                                if not movimentacoes_pj_ja_existem(data_mov):
+                                    inserir_recebido_pj(
+                                        dia_corrente,
+                                        valor,
+                                        id_conta_para_inserir,
+                                        id_tipo,
+                                    )
                             else:
                                 inserir_movimentacao(
                                     dia_corrente,                            # DATE
@@ -439,12 +481,13 @@ elif opcao == "🗓️ Planejamentos":
                            id_conta_para_inserir = DEFAULT_CONTA_POR_MOEDA[2]
                         if not movimentacao_existe(data_mov, descricao, id_categoria):
                             if id_categoria == 18:
-                                inserir_recebido_pj(
-                                    data_mov,
-                                    valor,
-                                    id_conta_para_inserir,
-                                    id_tipo,
-                                )
+                                if not movimentacoes_pj_ja_existem(data_mov):
+                                    inserir_recebido_pj(
+                                        data_mov,
+                                        valor,
+                                        id_conta_para_inserir,
+                                        id_tipo,
+                                    )
                             else:
                                 inserir_movimentacao(
                                     data_mov,                            # DATE

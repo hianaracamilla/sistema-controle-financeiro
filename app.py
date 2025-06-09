@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Hianara Camilla
+# Licensed under CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/)
+
 import datetime
 import pandas as pd
 import  streamlit as st

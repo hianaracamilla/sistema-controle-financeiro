@@ -1,5 +1,7 @@
 # 💰 Sistema de Acompanhamento Financeiro Familiar
 
+Este é um projeto desenvolvido por **Hianara Camilla**, distribuído sob a licença **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**.
+
 Este repositório contém o projeto de um sistema de controle financeiro familiar. O objetivo é oferecer uma solução personalizada para organizar, planejar e acompanhar receitas, despesas, saldos, planejamentos e operações de câmbio — tudo de forma integrada, com suporte a múltiplas moedas.
 
 ## 🧭 Objetivo do Projeto
@@ -27,6 +29,7 @@ Desenvolver um sistema completo que permita:
 - [x] Visualização e edição de movimentações com saldo e conversão
 - [x] Registro de planejamentos com recorrência e geração futura
 - [x] Commit organizado com separação de arquivos e pasta de documentação
+- [x] Registro automático de saldo no db pós-movimentação
 
 
 ## 🗃️ Entidades e Funcionalidades
@@ -59,12 +62,23 @@ Desenvolver um sistema completo que permita:
 ## 🚧 Em Desenvolvimento
 
 Próximas etapas planejadas:
-- [ ] Registro automático de saldo no db pós-movimentação
 - [ ] Tela de controle de saldos por conta e moeda, visualizações futuras
 - [ ] Geração de relatórios financeiros e gráficos
 - [ ] Inserção e acompanhamento de metas financeiras
 - [ ] Criação de dashboard por período
 
 ---
+
+## 📝 Licença
+
+Este projeto está licenciado sob os termos da [Creative Commons BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
+
+Você pode:
+
+✅ Usar, copiar, modificar e distribuir este projeto, **desde que dê o devido crédito**.
+
+❌ **Não pode utilizar para fins comerciais** sem autorização prévia.
+
+Copyright (c) 2025 Hianara Camilla
 
 Feito com ❤️ e muitos commits por [Hianara Camilla](https://github.com/hianaracamilla)

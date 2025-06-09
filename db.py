@@ -1,3 +1,7 @@
+# Copyright (c) 2025 Hianara Camilla
+# Licensed under CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/)
+
+
 import psycopg2
 import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP

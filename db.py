@@ -125,13 +125,13 @@ def carregar_movimentacoes():
         SELECT 
             m.id_mov,
             m.data_mov AS data,
-            m.descricao,
-            m.valor,
+            m.descricao AS descricao,
+            m.valor AS valor,
             mo.moeda    AS moeda,
             c.nome_conta AS conta,
-            m.id_tipo,
+            m.id_tipo AS id_tipo,
             tm.nome     AS tipo,
-            tm.natureza,
+            tm.natureza AS natureza,
             cat.nome    AS categoria,
             m.status AS status
         FROM movimentacao m
@@ -179,6 +179,60 @@ def deletar_movimentacao(id_mov):
     finally:
         cur.close()
         conn.close()
+
+def inserir_transferencia_entre_contas(data, descricao, valor, id_moeda):
+    """
+    Insere duas movimentações (saída e entrada) quando a categoria for 'Transferência entre contas'.
+    Ambas serão salvas com status 'pendente' e contas padrão da moeda.
+    """
+
+    DEFAULT_CONTA_POR_MOEDA = {
+    1: 97,   # ARS → id_conta 97
+    2: 98,   # BRL → id_conta 98
+    3: 99,   # USD → id_conta 99
+    }
+    
+    try:
+        id_categoria_transferencia = 28
+        id_tipo_saida = 16
+        id_tipo_entrada = 17
+        status = "pendente"
+
+        conta_origem = DEFAULT_CONTA_POR_MOEDA.get(id_moeda)
+        conta_destino = DEFAULT_CONTA_POR_MOEDA.get(id_moeda)
+
+        if not conta_origem or not conta_destino:
+            return False, "❗ Conta padrão não definida para esta moeda."
+
+        # Saída
+        sucesso1, msg1 = inserir_movimentacao(
+            data=data,
+            descricao=descricao,
+            valor=valor,
+            id_conta=conta_origem,
+            id_tipo=id_tipo_saida,
+            id_categoria=id_categoria_transferencia,
+            status=status
+        )
+
+        # Entrada
+        sucesso2, msg2 = inserir_movimentacao(
+            data=data,
+            descricao=descricao,
+            valor=valor,
+            id_conta=conta_destino,
+            id_tipo=id_tipo_entrada,
+            id_categoria=id_categoria_transferencia,
+            status=status
+        )
+
+        if sucesso1 and sucesso2:
+            return True, "✅ Transferência entre contas registrada com sucesso."
+        else:
+            return False, msg1 if not sucesso1 else msg2
+
+    except Exception as e:
+        return False, f"❌ Erro ao registrar transferência entre contas: {e}"
 
 
 # ----- PLANEJAMENTOS -----
@@ -347,6 +401,33 @@ def carregar_cambios():
         ORDER BY c.data_cambio DESC
     """
     return pd.read_sql(query, conn)
+
+def buscar_ultima_cotacao_por_conta(id_conta_compra, data_movimentacao):
+    """
+    Retorna a cotação ARS→BRL ou USD→BRL da conta COMPRA,
+    quando BRL foi a conta_venda.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    query = """
+    SELECT valor_vendido / valor_comprado AS cotacao
+    FROM cambio
+    WHERE 
+        conta_compra = %s
+        AND data_cambio <= %s
+    ORDER BY data_cambio DESC
+    LIMIT 1
+    """
+    cur.execute(query, (id_conta_compra, data_movimentacao))
+    resultado = cur.fetchone()
+    conn.close()
+
+    if resultado:
+        return float(resultado[0])
+    else:
+        return None
+
 
 # ----- RECEBIDO PJ -----
 

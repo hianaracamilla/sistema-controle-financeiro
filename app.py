@@ -22,7 +22,9 @@ from db import (
     buscar_opcoes_tipo,
     buscar_opcoes_categoria,
     movimentacoes_pj_ja_existem,
-    deletar_movimentacao
+    deletar_movimentacao,
+    inserir_transferencia_entre_contas,
+    buscar_ultima_cotacao_por_conta
 )
 
 # Conta padrão (fictícia) para gerar movimentações de planejados
@@ -65,31 +67,103 @@ if opcao == "📥 Movimentações":
     # Título da página
     st.title("📊 Controle de Movimentações Financeiras")
 
+    # Cotações padrão
+    if "cotacao_ARS" not in st.session_state:
+        st.session_state.cotacao_ARS = 180.0
+    if "cotacao_USD" not in st.session_state:
+        st.session_state.cotacao_USD = 5.0
+
+    with st.expander("💱 Ajustar cotações padrão (para valores pendentes)", expanded=True):
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.session_state.cotacao_ARS = st.number_input("Cotação ARS → BRL", value=st.session_state.cotacao_ARS, min_value=0.01, step=0.1)
+        with col_b:
+            st.session_state.cotacao_USD = st.number_input("Cotação USD → BRL", value=st.session_state.cotacao_USD, min_value=0.01, step=0.1)
+
+
     # --- BOTÕES SUPERIORES ---
     st.header("Importação e Filtros")
-    if "filtro_mov" not in st.session_state:
-        st.session_state.filtro_mov = None
-    filtro_personalizado = st.session_state.get("filtro_mov", None)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("📅 Pendentes até ontem"):
-            st.session_state.filtro_mov = ("ate_ontem", datetime.date.today() - datetime.timedelta(days=1))
-            st.rerun()
-    with col2:
-        if st.button("📆 Próximos 7 dias"):
-            st.session_state.filtro_mov = ("proximos_7", datetime.date.today() + datetime.timedelta(days=7))
-            st.rerun()
-    with col3:
-        if st.button("❌ Limpar Filtros"):
+    with st.expander("🔎 Filtros de busca", expanded=True):
+        st.markdown("### 🎯 Filtro por período")
+
+        col_data1, col_data2 = st.columns(2)
+        with col_data1:
+            data_inicio_filtro = st.date_input("Data inicial", value=None, key="data_inicio_filtro")
+        with col_data2:
+            data_fim_filtro = st.date_input("Data final", value=None, key="data_fim_filtro")
+
+        st.markdown("### 🧮 Filtros adicionais")
+
+        col_f1, col_f2 = st.columns(2)
+
+        with col_f1:
+            conta_filtro = st.selectbox(
+                "Filtrar por conta",
+                options=["Todas"] + list(contas_info.keys()),
+                index=0
+            )
+
+        with col_f2:
+            categoria_filtro = st.selectbox(
+                "Filtrar por categoria",
+                options=["Todas"] + list(categorias.keys()),
+                index=0
+            )
+
+
+        if "filtro_mov" not in st.session_state:
             st.session_state.filtro_mov = None
-            st.rerun()
+        filtro_personalizado = st.session_state.get("filtro_mov", None)
+        
+        st.markdown("### ⚡ Filtros rápidos")
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            if st.button("📅 Ultimos 7 dias"):
+                st.session_state.filtro_mov = ("ate_ontem", datetime.date.today() - datetime.timedelta(days=7))
+                st.rerun()
+        with col2:
+            if st.button("📆 Próximos 7 dias"):
+                st.session_state.filtro_mov = ("proximos_7", datetime.date.today() + datetime.timedelta(days=7))
+                st.rerun()
+        with col3:
+            if st.button("⏳ Todas pendentes"):
+                st.session_state.filtro_mov = ("somente_pendentes", None)
+                st.rerun()
+        with col4:
+            if st.button("❌ Limpar Filtros"):
+                st.session_state.filtro_mov = None
+                st.rerun()
+        
+
 
 
     df = carregar_movimentacoes()
+    df["data"] = pd.to_datetime(df["data"])
+
+    # AQUI: adiciona a coluna com ID da conta para ser usada na função
+    df["id_conta"] = df["conta"].map(lambda nome: contas_info[nome][0] if nome in contas_info else None)
 
     filtro_personalizado = st.session_state.get("filtro_mov", None)
 
+    # ✅ Filtro por intervalo de datas (manual) — sempre aplicado
+    if data_inicio_filtro:
+        df = df[df["data"] >= pd.Timestamp(data_inicio_filtro)]
+    if data_fim_filtro:
+        df = df[df["data"] <= pd.Timestamp(data_fim_filtro)]
+
+
+    # Filtro por conta (nome)
+    if conta_filtro != "Todas":
+        df = df[df["conta"] == conta_filtro]
+
+    # Filtro por categoria (nome)
+    if categoria_filtro != "Todas":
+        df = df[df["categoria"] == categoria_filtro]
+
+
+    # ✅ Filtros especiais baseados nos botões
     if filtro_personalizado:
         tipo_filtro, data_limite = filtro_personalizado
         hoje = datetime.date.today()
@@ -97,15 +171,17 @@ if opcao == "📥 Movimentações":
             df = df[(df["data"] <= data_limite) & (df["status"] == "pendente")]
         elif tipo_filtro == "proximos_7":
             df = df[(df["data"] > hoje) & (df["data"] <= data_limite) & (df["status"] == "pendente")]
+        elif tipo_filtro == "somente_pendentes":
+            df = df[df["status"] == "pendente"]
+
+
 
 
     # --- FORMULÁRIO DE NOVA MOVIMENTAÇÃO ---
-    if st.button("➕ Inserir nova movimentação"):
-        st.session_state.mostrar_formulario = not st.session_state.mostrar_formulario
-
-    if st.session_state.mostrar_formulario:
-        st.subheader("Inserir nova movimentação")
+    with st.expander("➕ Inserir nova movimentação", expanded=st.session_state.mostrar_formulario):
         with st.form("nova_movimentacao"):
+            st.markdown("Preencha os dados abaixo para adicionar uma nova movimentação:")
+
             col1, col2, col3 = st.columns(3)
             data = col1.date_input("Data", value=datetime.date.today())
             descricao = col2.text_input("Descrição")
@@ -117,17 +193,16 @@ if opcao == "📥 Movimentações":
             categoria = st.selectbox("Categoria", list(categorias.keys()))
             status = st.selectbox("Status", ["pendente", "confirmado", "cancelado"])
 
-
             submitted = st.form_submit_button("Salvar movimentação")
             if submitted:
                 valor_convertido = valor
                 id_conta, sigla_moeda = contas_info[conta]
 
                 if sigla_moeda == "ARS":
-                    valor_convertido = valor / 180
+                    valor_convertido = valor / st.session_state.cotacao_ARS
                 elif sigla_moeda == "USD":
-                    valor_convertido = valor * 5
-                else: 
+                    valor_convertido = valor * st.session_state.cotacao_USD
+                else:
                     valor_convertido = valor
 
 
@@ -140,11 +215,17 @@ if opcao == "📥 Movimentações":
                         )
                     else:
                         sucesso, msg = False, "❗ Movimentações PJ já existentes nesta data."
+                elif cat_id == 28:
+                    id_moeda = [moeda_id for moeda_sigla, moeda_id in moedas.items() if moeda_sigla == sigla_moeda][0]
+                    sucesso, msg = inserir_transferencia_entre_contas(
+                        data, descricao, valor, id_moeda
+                    )
                 else:
                     sucesso, msg = inserir_movimentacao(
                         data, descricao, valor,
                         id_conta, tipos[tipo], cat_id, status
                     )
+
                 if sucesso:
                     st.success(msg)
                 else:
@@ -153,18 +234,42 @@ if opcao == "📥 Movimentações":
 
 
     # --- TABELA MOVIMENTAÇÕES ---
-    st.subheader("📋 Movimentações")
+    st.subheader("📋 Visualização das movimentações")
 
-    # Conversão de moeda para reais
     def converter_valor(row):
-        if row['moeda'] == 'ARS':
-            return row['valor'] / 180
-        elif row['moeda'] == 'USD':
-            return row['valor'] * 5
-        else:
-            return row['valor']
+        sigla_moeda = row["moeda"]
+        status = row["status"]
+        valor = row["valor"]
+        id_conta = row["id_conta"]
 
-    df['valor_convertido'] = df.apply(converter_valor, axis=1)
+        data_mov = row["data"]
+        if isinstance(data_mov, pd.Timestamp):
+            data_mov = data_mov.date()
+
+        if sigla_moeda == "BRL" or not sigla_moeda:
+            return valor
+
+        if status == "pendente":
+            if sigla_moeda == "ARS":
+                return valor / st.session_state.cotacao_ARS
+            elif sigla_moeda == "USD":
+                return valor * st.session_state.cotacao_USD
+            else:
+                return valor
+
+        elif status == "confirmado":
+            cotacao_real = buscar_ultima_cotacao_por_conta(id_conta, data_mov)
+            if cotacao_real:
+                return valor * cotacao_real  # pois é valor estrangeiro → BRL
+            return valor  # fallback
+
+        else:
+            return valor
+
+
+
+    # AQUI: aplica a função usando a coluna já criada
+    df["valor_convertido"] = df.apply(converter_valor, axis=1)
 
     # Ajuste de sinal na moeda original
     df['valor_ajustado_moeda'] = df.apply(
@@ -184,8 +289,9 @@ if opcao == "📥 Movimentações":
     df["selecionar"] = False
     df = df[[  # reorganiza as colunas
     'selecionar', 'id_mov', 'data', 'descricao', 'valor', 'moeda', 'valor_convertido',
-        'conta', 'saldo_exibido', 'status', 'tipo', 'categoria',  'id_tipo'
+    'conta', 'saldo_exibido', 'status', 'tipo', 'categoria', 'id_tipo', 'natureza'
     ]]
+
 
 
     edited_df = st.data_editor(
@@ -207,11 +313,36 @@ if opcao == "📥 Movimentações":
             "categoria": st.column_config.TextColumn("Categoria"),
             'id_tipo': st.column_config.NumberColumn(
                 "ID Tipo", help="(chave estrangeira)", disabled=True),
+            "natureza": st.column_config.TextColumn("Natureza", disabled=True),
             "saldo_exibido": st.column_config.TextColumn("Saldo após transação"),
             "status": st.column_config.SelectboxColumn("Status", options=["pendente", "confirmado", "cancelado"]),
         },
         num_rows="dynamic"
     )
+
+    # --- TOTAIS PENDENTES POR MOEDA ---
+    st.markdown("### 💰 Totais pendentes por moeda")
+
+    # Filtra pendentes
+    df_pendentes = df[df["status"] == "pendente"].copy()
+
+    # Aplica sinal com base na natureza
+    df_pendentes["valor_ajustado"] = df_pendentes.apply(
+        lambda row: row["valor"] if row["natureza"] == "entrada" else -row["valor"],
+        axis=1
+    )
+
+    # Agrupa e mostra
+    totais_pendentes = df_pendentes.groupby("moeda")["valor_ajustado"].sum().reset_index()
+
+    if not totais_pendentes.empty:
+        for _, row in totais_pendentes.iterrows():
+            st.write(f"• {row['moeda']}: {row['valor_ajustado']:,.2f}")
+    else:
+        st.write("Nenhuma movimentação pendente nos filtros aplicados.")
+
+
+
 
     if st.button("🗑️ Deletar movimentações selecionadas"):
         deletadas = 0
@@ -266,6 +397,37 @@ if opcao == "📥 Movimentações":
         st.success(f"✅ {atualizacoes} movimentações atualizadas com sucesso.")
         st.rerun()
 
+        # --- SESSÃO: SALDOS AGRUPADOS ---
+    st.markdown("## 📊 Saldos Agrupados")
+
+    # Ajuste de sinal na moeda original
+    df['valor_ajustado_moeda'] = df.apply(
+        lambda row: row['valor'] if row['natureza'] == 'entrada' else -row['valor'],
+        axis=1
+    )
+
+
+    # Agrupamento por Pessoa x Moeda x Tipo de Conta
+    st.subheader("👥 Pessoa x Moeda x Tipo de Conta")
+    saldos_pessoa = df.groupby(["conta", "moeda"], as_index=False)["valor_ajustado_moeda"].sum()
+    saldos_pessoa["pessoa"] = saldos_pessoa["conta"].apply(lambda x: x.split()[0])
+    saldos_pessoa["tipo_conta"] = saldos_pessoa["conta"].apply(lambda x: x.split()[-1])
+    saldos_pessoa = saldos_pessoa.groupby(["pessoa", "moeda", "tipo_conta"], as_index=False)["valor_ajustado_moeda"].sum()
+    st.dataframe(saldos_pessoa, use_container_width=True)
+
+    # Agrupamento por Moeda x Tipo de Conta
+    st.subheader("💱 Moeda x Tipo de Conta")
+    saldos_moeda_tipo = saldos_pessoa.groupby(["moeda", "tipo_conta"], as_index=False)["valor_ajustado_moeda"].sum()
+    st.dataframe(saldos_moeda_tipo, use_container_width=True)
+
+    # Gastos por Categoria Estratégica (exceto categoria 18: Recebido PJ)
+    st.subheader("🧾 Gastos por Categoria Estratégica")
+    gastos_categoria = df[df["id_tipo"] != 18].groupby("categoria", as_index=False)["valor_ajustado_moeda"].sum()
+    gastos_categoria = gastos_categoria[gastos_categoria["valor_ajustado_moeda"] < 0]  # apenas gastos (valores negativos)
+    gastos_categoria["valor_ajustado_moeda"] = gastos_categoria["valor_ajustado_moeda"].abs()  # mostra em positivo
+    st.dataframe(gastos_categoria, use_container_width=True)
+
+
 
 elif opcao == "💱 Câmbio":
     if "mostrar_cambio" not in st.session_state:
@@ -314,6 +476,22 @@ elif opcao == "💱 Câmbio":
 elif opcao == "🗓️ Planejamentos":
     if "mostrar_planejado" not in st.session_state:
         st.session_state.mostrar_planejado = False
+
+    # --- TELA DE PLANEJAMENTOS ---
+    st.title("🗓️ Planejamentos Financeiros")
+        # Cotações padrão
+    if "cotacao_ARS" not in st.session_state:
+        st.session_state.cotacao_ARS = 180.0
+    if "cotacao_USD" not in st.session_state:
+        st.session_state.cotacao_USD = 5.0
+
+    with st.expander("💱 Ajustar cotações padrão (para valores pendentes)", expanded=True):
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.session_state.cotacao_ARS = st.number_input("Cotação ARS → BRL", value=st.session_state.cotacao_ARS, min_value=0.01, step=0.1)
+        with col_b:
+            st.session_state.cotacao_USD = st.number_input("Cotação USD → BRL", value=st.session_state.cotacao_USD, min_value=0.01, step=0.1)
+
 
     st.header("🗓️ Movimentações Planejadas")
 
@@ -555,4 +733,22 @@ elif opcao == "🗓️ Planejamentos":
             st.success("Planejados atualizados.")
     else:
         st.write("Nenhum planejamento cadastrado.")
+
+    # Aplica cores conforme o valor do saldo previsto em BRL
+    def cor_saldo(valor):
+        if valor <= 300:
+            return 'background-color: #ffcccc'  # vermelho claro
+        elif 301 <= valor <= 600:
+            return 'background-color: #fff0b3'  # laranja claro
+        elif valor > 600:
+            return 'background-color: #ccffcc'  # verde claro
+        return ''
+
+    # Aplica a função de cor no DataFrame pivô (a tabela já montada por data x tipo de conta)
+    tabela_estilizada = pivot_tabela.style.applymap(cor_saldo)
+
+    # Exibe a tabela estilizada no Streamlit
+    st.write("### 📅 Linha do tempo financeira (saldos previstos por tipo de conta)")
+    st.dataframe(tabela_estilizada, use_container_width=True)
+
 

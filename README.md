@@ -57,6 +57,8 @@ Desenvolver um sistema completo que permita:
 - Calcula e exibe a taxa efetiva
 - Gera automaticamente duas movimentações com tipo e categoria específicos
 
+<img width="1410" height="848" alt="image" src="https://github.com/user-attachments/assets/9cfcf067-63ac-4ee4-acb6-ce6cd6be967c" />
+
 ---
 
 ## 🚧 Em Desenvolvimento

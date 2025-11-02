@@ -15,7 +15,7 @@ def get_connection():
         port="5432"
     )
 
-
+ 
 # ----- MOVIMENTACÕES -----
 def inserir_movimentacao(data, descricao, valor, id_conta, id_tipo, id_categoria, status):
     conn = get_connection()

@@ -734,21 +734,4 @@ elif opcao == "🗓️ Planejamentos":
     else:
         st.write("Nenhum planejamento cadastrado.")
 
-    # Aplica cores conforme o valor do saldo previsto em BRL
-    def cor_saldo(valor):
-        if valor <= 300:
-            return 'background-color: #ffcccc'  # vermelho claro
-        elif 301 <= valor <= 600:
-            return 'background-color: #fff0b3'  # laranja claro
-        elif valor > 600:
-            return 'background-color: #ccffcc'  # verde claro
-        return ''
-
-    # Aplica a função de cor no DataFrame pivô (a tabela já montada por data x tipo de conta)
-    tabela_estilizada = pivot_tabela.style.applymap(cor_saldo)
-
-    # Exibe a tabela estilizada no Streamlit
-    st.write("### 📅 Linha do tempo financeira (saldos previstos por tipo de conta)")
-    st.dataframe(tabela_estilizada, use_container_width=True)
-
 

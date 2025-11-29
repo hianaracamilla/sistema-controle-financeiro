@@ -1,0 +1,24 @@
+id_plan,recorrencia,dia,valor,data_inicio,data_final,descricao,caixinha,tipo
+1,mensal,1,3200,2025-01-01,2030-12-31,Habitacional,Habitacional,saida
+2,mensal,1,1500,2025-01-01,2030-12-31,Pets,Pets,saida
+3,semanal,5,350,2025-01-05,2030-12-31,Mercado,Mercado,saida
+4,mensal,1,300,2025-01-01,2030-12-31,Diarista,Diarista,saida
+5,mensal,1,1450,2025-01-01,2030-12-31,Saude,Saude,saida
+6,mensal,1,350,2025-01-01,2030-12-31,Vestimenta,Vestimenta,saida
+7,mensal,1,1500,2025-01-01,2030-12-31,Dividas,Dividas,saida
+8,mensal,1,3000,2025-01-01,2030-12-31,Mae Stefane,Mae Stefane,saida
+9,mensal,1,500,2025-01-01,2030-12-31,Mae Hianara,Mae Hianara,saida
+10,mensal,1,1600,2025-01-01,2030-12-31,Mesada,Mesada,saida
+11,mensal,1,300,2025-01-01,2030-12-31,Gastos Livres,Gastos Livres,saida
+12,mensal,1,300,2025-01-01,2030-12-31,Dates,Dates,saida
+13,mensal,1,10,2025-01-01,2030-12-31,Doacoes,Doacoes,saida
+14,mensal,1,50,2025-01-01,2030-12-31,Datas Comemorativas,Datas Comemorativas,saida
+15,mensal,1,1500,2025-01-01,2030-12-31,Mini Ferias,Mini Ferias,saida
+16,mensal,1,100,2025-01-01,2030-12-31,Acoes,Acoes,saida
+17,mensal,1,60,2025-01-01,2030-12-31,Bitcoin,Bitcoin,saida
+18,mensal,1,1800,2025-01-01,2030-12-31,Reserva Emergencia,Reserva Emergencia,saida
+19,mensal,1,200,2025-01-01,2030-12-31,Desafio Nath,Desafio Nath,saida
+20,mensal,5,2600,2025-01-05,2030-12-31,SalarioH,Receita,entrada
+21,mensal,1,7225,2025-01-01,2030-12-31,SalarioSA,Receita,entrada
+22,mensal,1,7826,2025-01-01,2030-12-31,SalarioSB,Receita,entrada
+23,mensal,28,880,2025-01-28,2030-12-31,SalarioHA,Receita,entrada

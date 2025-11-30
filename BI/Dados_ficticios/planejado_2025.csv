@@ -1,24 +1,39 @@
-id_plan,recorrencia,dia,valor,data_inicio,data_final,descricao,caixinha,tipo
-1,mensal,1,3200,2025-01-01,2030-12-31,Habitacional,Habitacional,saida
-2,mensal,1,1500,2025-01-01,2030-12-31,Pets,Pets,saida
-3,semanal,5,350,2025-01-05,2030-12-31,Mercado,Mercado,saida
-4,mensal,1,300,2025-01-01,2030-12-31,Diarista,Diarista,saida
-5,mensal,1,1450,2025-01-01,2030-12-31,Saude,Saude,saida
-6,mensal,1,350,2025-01-01,2030-12-31,Vestimenta,Vestimenta,saida
-7,mensal,1,1500,2025-01-01,2030-12-31,Dividas,Dividas,saida
-8,mensal,1,3000,2025-01-01,2030-12-31,Mae Stefane,Mae Stefane,saida
-9,mensal,1,500,2025-01-01,2030-12-31,Mae Hianara,Mae Hianara,saida
-10,mensal,1,1600,2025-01-01,2030-12-31,Mesada,Mesada,saida
-11,mensal,1,300,2025-01-01,2030-12-31,Gastos Livres,Gastos Livres,saida
-12,mensal,1,300,2025-01-01,2030-12-31,Dates,Dates,saida
-13,mensal,1,10,2025-01-01,2030-12-31,Doacoes,Doacoes,saida
-14,mensal,1,50,2025-01-01,2030-12-31,Datas Comemorativas,Datas Comemorativas,saida
-15,mensal,1,1500,2025-01-01,2030-12-31,Mini Ferias,Mini Ferias,saida
-16,mensal,1,100,2025-01-01,2030-12-31,Acoes,Acoes,saida
-17,mensal,1,60,2025-01-01,2030-12-31,Bitcoin,Bitcoin,saida
-18,mensal,1,1800,2025-01-01,2030-12-31,Reserva Emergencia,Reserva Emergencia,saida
-19,mensal,1,200,2025-01-01,2030-12-31,Desafio Nath,Desafio Nath,saida
-20,mensal,5,2600,2025-01-05,2030-12-31,SalarioH,Receita,entrada
-21,mensal,1,7225,2025-01-01,2030-12-31,SalarioSA,Receita,entrada
-22,mensal,1,7826,2025-01-01,2030-12-31,SalarioSB,Receita,entrada
-23,mensal,28,880,2025-01-28,2030-12-31,SalarioHA,Receita,entrada
+recorrencia;dia;valor;data_inicio;descricao;caixinha
+mensal;5;2200;05/11/2025;Aluguel;Habitacional
+semanal;5;300;01/11/2025;Mercado;Mercado
+semanal;1;100;01/11/2025;Verdureria;Mercado
+semanal;1;140;01/11/2025;Terapia Hianara;Saude
+mensal;5;150;05/11/2025;Dentista;Saude
+mensal;10;200;10/11/2025;Parcela Roupa/Sapato Mercado Livre;Vestimenta
+mensal;14;150;14/11/2025;Lavanderia;Vestimenta
+mensal;1;7225;01/11/2025;Salario 1 Stefane;Receitas
+mensal;1;7826;01/11/2025;Salario 2 Stefane;Receitas
+mensal;5;2600;05/11/2025;Salario 1 Hianara;Receitas
+mensal;1;918;01/11/2025;Salario 2 Hianara;Receitas
+mensal;28;690;28/11/2025;VR Hianara;Receitas
+mensal;1;3000;01/11/2025;Mae Stefane;Mae Stefane
+mensal;10;500;10/11/2025;Expensas;Habitacional
+mensal;10;300;10/11/2025;Energia;Habitacional
+mensal;10;30;10/11/2025;Gas;Habitacional
+mensal;10;434;10/11/2025;CEMEFE;Pets
+mensal;1;450;01/11/2025;PlusPet;Pets
+mensal;23;150;23/11/2025;Internet;Habitacional
+mensal;25;700;25/11/2025;Cachorros;Pets
+mensal;1;300;01/11/2025;Diarista;Diarista
+mensal;1;4000;01/11/2025;Dividas;Dividas
+mensal;1;500;01/11/2025;Mae Hianara;Mae Hianara
+mensal;1;1600;01/11/2025;Mesada;Mesada
+mensal;1;300;01/11/2025;Gastos Livres;Gastos Livres
+mensal;1;300;01/11/2025;Dates;Dates
+mensal;1;10;01/11/2025;Doacoes;Doacoes
+mensal;1;50;01/11/2025;COMEMORACOES;COMEMORACOES
+mensal;1;1500;01/11/2025;Mini Ferias;Mini Ferias
+mensal;1;100;01/11/2025;Acoes;Acoes
+mensal;1;60;01/11/2025;Bitcoin;Bitcoin
+mensal;1;1800;01/11/2025;Reserva Emergencia;Reserva Emergencia
+mensal;1;200;01/11/2025;Desafio Nath;Desafio Nath
+Mensal;5;150;05/11/2025;Palacio das Oportunidades;Quinquilharia da Casa
+Mensal;5;500;05/11/2025;Mercado Livre;Quinquilharia da Casa
+Mensal;28;170;28/11/2025;Calistenia;Saude
+Mensal;1;100;01/11/2025;Futebol;Saude
+mensal;1;50;01/11/2025;Credito Celular;Habitacional

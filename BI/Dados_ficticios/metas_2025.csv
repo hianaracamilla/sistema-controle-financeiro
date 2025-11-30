@@ -1,6 +1,6 @@
-id_meta,nome_meta,caixinha,categoria,valor_meta,valor_atual
-1,Reserva Emergencia 6 meses,Reserva Emergencia,Viver o Depois,60000,36527
-2,Aposentadoria Bitcoin,Bitcoin,Viver o Depois,10000,1500
-3,Carteira de Acoes,Acoes,Viver o Depois,10000,500
-4,Mini Ferias Brasil,Mini Ferias,Viver o Depois,22500,3000
-5,Desafio Nath,Desafio Nath,Viver o Depois,2400,800
+id_meta;nome_meta;caixinha;categoria;valor_meta
+1;Reserva Emergencia 6 meses;Reserva Emergencia;Viver o Depois;60000
+2;Aposentadoria Bitcoin;Bitcoin;Viver o Depois;10000
+3;Carteira de Acoes;Acoes;Viver o Depois;10000
+4;Mini Ferias Brasil;Mini Ferias;Viver o Depois;7500
+5;Desafio Nath;Desafio Nath;Viver o Depois;2400

@@ -89,3 +89,177 @@ CREATE TABLE DICIONARIO_CLASSIFICACAO (
         REFERENCES CAIXINHA (id_caixinha)
         ON DELETE RESTRICT
 );
+
+-- Criar índices para melhor performance
+CREATE INDEX idx_movimentacao_dt ON MOVIMENTACAO(dt_mov);
+CREATE INDEX idx_movimentacao_caixinha ON MOVIMENTACAO(FK_CAIXINHA_Id);
+CREATE INDEX idx_planejado_caixinha ON PLANEJADO(FK_CAIXINHA_Id);
+CREATE INDEX idx_dicionario_palavra ON DICIONARIO_CLASSIFICACAO(palavra_chave);
+
+CREATE OR REPLACE VIEW dim_caixinhas_e_categorias AS 
+SELECT
+    c.id_caixinha,
+    c.caixinha,
+    c.tipo_caixinha,
+    cat.categoria
+FROM caixinha c
+LEFT JOIN categoria cat ON c.fk_categoria_id = cat.id_categoria;
+
+CREATE OR REPLACE VIEW dim_metas AS
+SELECT
+    m.id_meta,
+    m.meta,
+    m.valor_alvo,
+    c.caixinha,
+    cat.categoria
+FROM metas m
+LEFT JOIN caixinha c ON m.fk_caixinha_id = c.id_caixinha
+LEFT JOIN categoria cat ON c.fk_categoria_id = cat.id_categoria;
+
+CREATE OR REPLACE VIEW dim_planejamento AS 
+SELECT
+    p.id_plan,
+    p.recorrencia_plan as recorrencia,
+    p.dia_plan as dia,
+    p.valor_plan as valor,
+    p.dt_inicio_plan as data_inicio,
+    p.dt_final_plan as data_final,
+    p.descricao_plan as descricao,
+    c.caixinha,
+    c.tipo_caixinha
+FROM planejado p
+LEFT JOIN caixinha c ON p.fk_caixinha_id = c.id_caixinha;
+
+CREATE OR REPLACE VIEW dim_mov AS
+SELECT
+    mov.id_mov,
+    mov.dt_mov as data,
+    mov.desc_extrato as descricao,
+    mov.valor_mov as valor,
+    c.tipo_caixinha as tipo,
+    c.caixinha,
+    cat.categoria as categoria_geral,
+    mov.origem_mov as origem,
+    mov.status_mov as status
+FROM movimentacao mov
+LEFT JOIN caixinha c ON mov.fk_caixinha_id = c.id_caixinha
+LEFT JOIN categoria cat ON c.fk_categoria_id = cat.id_categoria;
+
+-- =========================================
+-- A) Criar entidade PESSOA
+-- =========================================
+CREATE TABLE PESSOA (
+    id_pessoa SERIAL PRIMARY KEY,
+    nome VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+INSERT INTO pessoa (nome) VALUES
+('Casal'),
+('PJ Stefane'),
+('PJ Hianara'),
+('Stefane'),
+('Hianara');
+
+-- =========================================
+-- B) Adicionar FK_PESSOA em PLANEJADO e MOVIMENTACAO
+-- =========================================
+ALTER TABLE planejado
+ADD COLUMN fk_pessoa_id INTEGER;
+
+ALTER TABLE movimentacao
+ADD COLUMN fk_pessoa_id INTEGER;
+
+ALTER TABLE planejado
+ADD CONSTRAINT fk_planejado_pessoa
+FOREIGN KEY (fk_pessoa_id)
+REFERENCES pessoa (id_pessoa)
+ON DELETE RESTRICT;
+
+ALTER TABLE movimentacao
+ADD CONSTRAINT fk_movimentacao_pessoa
+FOREIGN KEY (fk_pessoa_id)
+REFERENCES pessoa (id_pessoa)
+ON DELETE RESTRICT;
+
+-- =========================================
+-- C) Atribuir todos os lançamentos existentes para "Casal"
+-- =========================================
+UPDATE planejado
+SET fk_pessoa_id = (SELECT id_pessoa FROM pessoa WHERE nome = 'Casal')
+WHERE fk_pessoa_id IS NULL;
+
+UPDATE movimentacao
+SET fk_pessoa_id = (SELECT id_pessoa FROM pessoa WHERE nome = 'Casal')
+WHERE fk_pessoa_id IS NULL;
+
+-- (Opcional, mas recomendado) tornar obrigatório daqui pra frente:
+ALTER TABLE planejado
+ALTER COLUMN fk_pessoa_id SET NOT NULL;
+
+ALTER TABLE movimentacao
+ALTER COLUMN fk_pessoa_id SET NOT NULL;
+
+-- Índices para filtro por pessoa
+CREATE INDEX idx_planejado_pessoa ON planejado(fk_pessoa_id);
+CREATE INDEX idx_movimentacao_pessoa ON movimentacao(fk_pessoa_id);
+
+-- =========================================
+-- D) Ajuste PLANEJADO: remover dt_final_plan e criar repeticoes_plan
+-- =========================================
+-- 1) Adiciona repeticoes_plan
+ALTER TABLE planejado
+ADD COLUMN repeticoes_plan INTEGER NOT NULL DEFAULT -1;
+
+-- 2) (Opcional) Normalizar UNICO para 1 repetição
+UPDATE planejado
+SET repeticoes_plan = 1
+WHERE recorrencia_plan = 'UNICO';
+
+-- 3) Remove a coluna dt_final_plan
+-- ATENÇÃO: isso vai quebrar views/queries que usam dt_final_plan; ajuste abaixo.
+ALTER TABLE planejado
+DROP COLUMN dt_final_plan;
+
+-- =========================================
+-- E) Atualizar views afetadas (recriar)
+-- =========================================
+DROP VIEW IF EXISTS dim_planejamento;
+
+CREATE OR REPLACE VIEW dim_planejamento AS 
+SELECT
+    p.id_plan,
+    p.recorrencia_plan as recorrencia,
+    p.repeticoes_plan as repeticoes,
+    p.dia_plan as dia,
+    p.valor_plan as valor,
+    p.dt_inicio_plan as data_inicio,
+    p.descricao_plan as descricao,
+    c.caixinha,
+    c.tipo_caixinha,
+    pes.nome as pessoa
+FROM planejado p
+LEFT JOIN caixinha c ON p.fk_caixinha_id = c.id_caixinha
+LEFT JOIN pessoa pes ON p.fk_pessoa_id = pes.id_pessoa;
+
+DROP VIEW IF EXISTS dim_mov;
+
+CREATE OR REPLACE VIEW dim_mov AS
+SELECT
+    mov.id_mov,
+    mov.dt_mov as data,
+    COALESCE(mov.descricao_mov, mov.desc_extrato) as descricao,
+    mov.valor_mov as valor,
+    c.tipo_caixinha as tipo,
+    c.caixinha,
+    cat.categoria as categoria_geral,
+    mov.origem_mov as origem,
+    mov.status_mov as status,
+    pes.nome as pessoa
+FROM movimentacao mov
+LEFT JOIN caixinha c ON mov.fk_caixinha_id = c.id_caixinha
+LEFT JOIN categoria cat ON c.fk_categoria_id = cat.id_categoria
+LEFT JOIN pessoa pes ON mov.fk_pessoa_id = pes.id_pessoa;
+
+
+

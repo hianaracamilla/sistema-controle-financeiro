@@ -1225,3 +1225,187 @@ def inserir_movimentacoes_em_lote(payloads: list[dict]):
         err3 = str(e3)
 
     return False, f"Falhou ao importar.\n1) {err1}\n2) {err2}\n3) {err3}"
+
+def _gera_valores_planejados_para_mes_caixinha(rows_plan: list[dict], ano: int, mes: int) -> list[dict]:
+    """
+    Igual ao _gera_valores_planejados_para_mes(), porém retorna lista:
+      [{caixinha, tipo, valor}]
+    """
+    ini, fim = _range_mes(ano, mes)
+    fim_m = fim - dt.timedelta(days=1)
+
+    out: list[dict] = []
+
+    for p in (rows_plan or []):
+        if not p.get("plan_ativo", True):
+            continue
+
+        # dt_inicio_plan pode vir como string ISO
+        dt_inicio_raw = p.get("dt_inicio_plan")
+        if not dt_inicio_raw:
+            continue
+
+        try:
+            if isinstance(dt_inicio_raw, str):
+                dt_inicio = dt.date.fromisoformat(dt_inicio_raw[:10])
+            elif isinstance(dt_inicio_raw, dt.date):
+                dt_inicio = dt_inicio_raw
+            else:
+                # fallback
+                dt_inicio = dt.date.fromisoformat(str(dt_inicio_raw)[:10])
+        except Exception:
+            continue
+
+        if dt_inicio > fim_m:
+            continue
+
+        recorr = (p.get("recorrencia_plan") or "").upper()
+        dia = int(p.get("dia_plan") or 1)
+        repet = int(p.get("repeticoes_plan") if p.get("repeticoes_plan") is not None else -1)
+
+        cx = p.get("caixinha") or {}
+        tipo = (cx.get("tipo_caixinha") or "").upper()
+        caixinha = cx.get("caixinha") or "SEM CAIXINHA"
+
+        # data representativa no mês
+        last_day = (fim - dt.timedelta(days=1)).day
+        dia_safe = min(max(dia, 1), last_day)
+        data_no_mes = dt.date(ano, mes, dia_safe)
+
+        # quantas ocorrências no mês?
+        occ = 0
+
+        if recorr == "MENSAL":
+            # 1 por mês se já começou
+            occ = 1 if dt_inicio <= fim_m else 0
+
+        elif recorr == "SEMANAL":
+            # conta quantas semanas no mês batem o weekday do dt_inicio (ou da data_no_mes)
+            # usa a data_no_mes (dia_plan) como referência de weekday
+            weekday_ref = data_no_mes.weekday()
+            d = dt.date(ano, mes, 1)
+            while d <= fim_m:
+                if d.weekday() == weekday_ref and d >= dt_inicio:
+                    occ += 1
+                d += dt.timedelta(days=1)
+
+        elif recorr == "UNICO":
+            # 1 se cair dentro do mês e não for antes do início
+            if ini <= data_no_mes <= fim_m and data_no_mes >= dt_inicio:
+                occ = 1
+
+        else:
+            # recorrência desconhecida -> trata como MENSAL
+            occ = 1 if dt_inicio <= fim_m else 0
+
+        if occ <= 0:
+            continue
+
+        # aplica limite de repetições (se não for "sempre")
+        if repet != -1:
+            # calcula quantas ocorrências já teriam acontecido até o fim do mês (aprox por mês)
+            # regra simples: limita pela contagem total prevista
+            occ = min(occ, max(repet, 0))
+
+        valor = float(p.get("valor_plan") or 0.0) * occ
+        if valor == 0:
+            continue
+
+        out.append({"caixinha": caixinha, "tipo": tipo, "valor": float(valor)})
+
+    return out
+
+
+def carregar_mov_mes_agregado_caixinha(
+    ano: int,
+    mes: int,
+    id_pessoa: int | None = None,
+    somente_confirmado: bool = True
+) -> pd.DataFrame:
+    """
+    Soma movimentações no mês por (caixinha, tipo_caixinha).
+    Retorna DF: [caixinha, tipo, valor]
+    """
+    try:
+        ini, fim = _range_mes(ano, mes)
+
+        query = """
+            id_mov, dt_mov, valor_mov, status_mov,
+            fk_caixinha_id, fk_pessoa_id,
+            caixinha:fk_caixinha_id (caixinha, tipo_caixinha)
+        """
+
+        q = (
+            supabase.table("movimentacao")
+            .select(query)
+            .gte("dt_mov", ini.isoformat())
+            .lt("dt_mov", fim.isoformat())
+        )
+
+        if somente_confirmado:
+            q = q.eq("status_mov", "confirmado")
+
+        if id_pessoa:
+            q = q.eq("fk_pessoa_id", id_pessoa)
+
+        resp = q.execute()
+        data = resp.data or []
+        if not data:
+            return pd.DataFrame()
+
+        rows = []
+        for r in data:
+            cx = r.get("caixinha") or {}
+            caixinha = cx.get("caixinha") or "SEM CAIXINHA"
+            tipo = (cx.get("tipo_caixinha") or "").upper()
+
+            rows.append({
+                "caixinha": caixinha,
+                "tipo": tipo,
+                "valor": float(r.get("valor_mov") or 0),
+            })
+
+        df = pd.DataFrame(rows)
+        df = df.groupby(["caixinha", "tipo"], as_index=False)["valor"].sum()
+        return df
+
+    except Exception as e:
+        print(f"Erro carregar_mov_mes_agregado_caixinha: {e}")
+        return pd.DataFrame()
+
+
+def carregar_planejado_mes_agregado_caixinha(
+    ano: int,
+    mes: int,
+    id_pessoa: int | None = None
+) -> pd.DataFrame:
+    """
+    Projeta planejados no mês e agrega por (caixinha, tipo_caixinha).
+    Retorna DF: [caixinha, tipo, valor]
+    """
+    try:
+        query = """
+            id_plan, recorrencia_plan, dia_plan, valor_plan, dt_inicio_plan, repeticoes_plan, plan_ativo,
+            fk_caixinha_id, fk_pessoa_id,
+            caixinha:fk_caixinha_id (caixinha, tipo_caixinha)
+        """
+        q = supabase.table("planejado").select(query).eq("plan_ativo", True)
+        if id_pessoa:
+            q = q.eq("fk_pessoa_id", id_pessoa)
+
+        resp = q.execute()
+        data = resp.data or []
+        if not data:
+            return pd.DataFrame()
+
+        rows = _gera_valores_planejados_para_mes_caixinha(data, ano, mes)
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+        df = df.groupby(["caixinha", "tipo"], as_index=False)["valor"].sum()
+        return df
+
+    except Exception as e:
+        print(f"Erro carregar_planejado_mes_agregado_caixinha: {e}")
+        return pd.DataFrame()

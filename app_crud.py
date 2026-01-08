@@ -56,8 +56,8 @@ from db_crud import (
     carregar_mov_mes_agregado,
     carregar_planejado_mes_agregado,
     inserir_movimentacoes_em_lote,
-
-
+    carregar_mov_mes_agregado_caixinha,
+    carregar_planejado_mes_agregado_caixinha,
 )
 
 STATUS_MOV_OPTIONS = ["PENDENTE", "CONFIRMADO", "CONCILIADO"]
@@ -340,6 +340,54 @@ if opcao == "📊 Dashboard":
         st.dataframe(dview[["categoria", "planejado", "real", "gap"]], use_container_width=True)
 
     st.caption("Obs: Planejado é projeção simples (MENSAL/SEMANAL/UNICO + repeticoes_plan).")
+
+    # ==========================
+    # DESPESAS (SAÍDA) — POR CAIXINHA
+    # ==========================
+    st.subheader("Despesas — Planejado x Real (SAÍDA) — por caixinha")
+
+    df_real_cx = carregar_mov_mes_agregado_caixinha(
+        ano, mes, id_pessoa=id_pessoa, somente_confirmado=somente_confirmado
+    )
+    df_plan_cx = carregar_planejado_mes_agregado_caixinha(
+        ano, mes, id_pessoa=id_pessoa
+    )
+
+    def norm_cx(df):
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["caixinha", "tipo", "valor"])
+        df = df.copy()
+        df["caixinha"] = df["caixinha"].fillna("SEM CAIXINHA")
+        df["tipo"] = df["tipo"].fillna("SEM TIPO")
+        df["valor"] = df["valor"].fillna(0).astype(float)
+        return df
+
+    df_real_cx = norm_cx(df_real_cx)
+    df_plan_cx = norm_cx(df_plan_cx)
+
+    base_cx = pd.merge(
+        df_plan_cx.rename(columns={"valor": "planejado"}),
+        df_real_cx.rename(columns={"valor": "real"}),
+        on=["caixinha", "tipo"],
+        how="outer",
+    ).fillna(0.0)
+
+    base_cx["gap"] = base_cx["planejado"] - base_cx["real"]
+
+    despesas_cx = base_cx[base_cx["tipo"] == "SAIDA"].copy()
+    despesas_cx = despesas_cx.sort_values("real", ascending=False).reset_index(drop=True)
+
+    if despesas_cx.empty:
+        st.info("Sem despesas por caixinha neste mês/filtro.")
+    else:
+        dview_cx = despesas_cx.copy()
+        dview_cx["planejado"] = dview_cx["planejado"].round(2)
+        dview_cx["real"] = dview_cx["real"].round(2)
+        dview_cx["gap"] = dview_cx["gap"].round(2)
+        st.dataframe(dview_cx[["caixinha", "planejado", "real", "gap"]], use_container_width=True)
+
+
+
 
 
 # ======================================================================================

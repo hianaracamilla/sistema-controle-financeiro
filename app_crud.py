@@ -190,7 +190,7 @@ if st.sidebar.button("🔄 Recarregar listas (Caixinhas/Pessoas)"):
 # MÓDULO: DASHBOARD
 # ======================================================================================
 if opcao == "📊 Dashboard":
-    st.title("📊 Dashboard (Real x Planejado)")
+    st.title("📊 Real x Planejado")
 
     hoje = datetime.date.today()
     c1, c2, c3 = st.columns(3)
